@@ -1,0 +1,5 @@
+Flask
+Flask-Bcrypt
+PyJWT
+fdb
+Flask-Cors

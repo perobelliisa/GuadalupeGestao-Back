@@ -25,8 +25,12 @@ try:
     print('Banco conectado com sucesso!')
 except Exception as e:
     print('Erro de conexão com o banco de dados')
-    
+
 from user import *
-    
+from doacoes import *
+from emprestimos import *
+from livro_caixa import *
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

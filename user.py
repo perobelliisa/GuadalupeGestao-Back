@@ -1,40 +1,7 @@
 from flask import Flask, jsonify, request, make_response
 from flask_bcrypt import generate_password_hash, check_password_hash
-import jwt
 from main import app, con
-from function import verificar_senha, gerar_token
-
-def usuario_e_administrador():
-    token = request.cookies.get('access_token')
-
-    if not token:
-        return False
-
-    try:
-        payload = jwt.decode(
-            token,
-            app.config['SECRET_KEY'],
-            algorithms=['HS256']
-        )
-        id_usuario = payload.get('id_user')
-
-        if not id_usuario:
-            return False
-
-        cur = con.cursor()
-        try:
-            cur.execute(
-                """SELECT TIPO
-                   FROM USUARIO
-                   WHERE ID_USUARIO = ?""",
-                (id_usuario,)
-            )
-            usuario = cur.fetchone()
-            return bool(usuario and usuario[0] == 0)
-        finally:
-            cur.close()
-    except jwt.PyJWTError:
-        return False
+from function import verificar_senha, gerar_token, usuario_e_administrador, usuario_pode_gerenciar_doacoes
 
 @app.route('/usuarios', methods=['GET'])
 def listar_usuarios():
@@ -83,7 +50,7 @@ def listar_usuarios():
 
 @app.route('/projetos', methods=['GET'])
 def listar_projetos():
-    if not usuario_e_administrador():
+    if not usuario_pode_gerenciar_doacoes():
         return jsonify({'sucesso': False, 'mensagem': 'Acesso não autorizado'}), 403
 
     cur = con.cursor()
@@ -208,6 +175,16 @@ def excluir_usuario(id_usuario):
             return jsonify({'sucesso': False, 'mensagem': 'Usuário não encontrado.'}), 404
 
         cur.execute(
+            "SELECT ID_EMPRESTIMO FROM EMPRESTIMO WHERE ID_USUARIO = ?",
+            (id_usuario,)
+        )
+        if cur.fetchone():
+            return jsonify({
+                'sucesso': False,
+                'mensagem': 'Não é possível excluir um usuário que possui empréstimos cadastrados.'
+            }), 409
+
+        cur.execute(
             "DELETE FROM USUARIO_PROJETO WHERE ID_USUARIO = ?",
             (id_usuario,)
         )
@@ -321,7 +298,7 @@ def cadastro():
 def login():
     cur = con.cursor()
     try:
-        dados = request.get_json(silent=True) or {}
+        dados = request.get_json() or {}
         email = str(dados.get('email') or '').strip()
         senha = dados.get('senha')
 
