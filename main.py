@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, send_from_directory
 import fdb
 from flask_cors import CORS
 
@@ -19,6 +19,11 @@ CORS(
     origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     supports_credentials=True
 )
+
+
+@app.route('/arquivos/<path:nome_arquivo>')
+def servir_arquivo(nome_arquivo):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], nome_arquivo)
 
 try:
     con= fdb.connect(host= host, database=database, user=user, password=password)

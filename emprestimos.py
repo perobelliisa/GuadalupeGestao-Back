@@ -1,59 +1,16 @@
-import datetime
-from decimal import Decimal, InvalidOperation
-
 from flask import jsonify, request
 
 from main import app, con
-from doacoes import dados_requisicao, valor, converter_valor, converter_data
-from function import usuario_pode_gerenciar_doacoes, salvar_anexo
-
-
-def validar_emprestimo(dados, cur):
-    try:
-        id_projeto = int(valor(dados, 'id_projeto'))
-        id_usuario = int(valor(dados, 'id_usuario'))
-        finalidade = valor(dados, 'finalidade')
-        origem = valor(dados, 'origem')
-        valor_emprestimo = converter_valor(valor(dados, 'valor'))
-        parcelas = int(valor(dados, 'parcelas'))
-        dia = converter_data(valor(dados, 'data', valor(dados, 'dia')))
-        validade = converter_data(valor(dados, 'validade', valor(dados, 'vencimento')))
-        devolucao = valor(dados, 'devolucao')
-        if devolucao:
-            devolucao = converter_data(devolucao)
-    except (TypeError, ValueError, InvalidOperation):
-        return None, 'Projeto, usuário, finalidade, origem, valor, parcelas e datas devem ser válidos.'
-
-    if not finalidade or not origem:
-        return None, 'Finalidade e origem são obrigatórias.'
-    if valor_emprestimo <= 0 or parcelas <= 0:
-        return None, 'Valor e parcelas devem ser maiores que zero.'
-    if validade < dia:
-        return None, 'A data de vencimento não pode ser anterior à data do empréstimo.'
-
-    cur.execute('SELECT ID_PROJETO FROM PROJETO WHERE ID_PROJETO = ?', (id_projeto,))
-    if not cur.fetchone():
-        return None, 'Projeto não encontrado.'
-    cur.execute('SELECT ID_USUARIO FROM USUARIO WHERE ID_USUARIO = ?', (id_usuario,))
-    if not cur.fetchone():
-        return None, 'Usuário não encontrado.'
-
-    return {
-        'id_projeto': id_projeto,
-        'id_usuario': id_usuario,
-        'finalidade': finalidade,
-        'origem': origem,
-        'valor': valor_emprestimo,
-        'parcelas': parcelas,
-        'dia': dia,
-        'validade': validade,
-        'devolucao': devolucao
-    }, None
-
-
-def emprestimo_existe(id_emprestimo, cur):
-    cur.execute('SELECT ID_EMPRESTIMO FROM EMPRESTIMO WHERE ID_EMPRESTIMO = ?', (id_emprestimo,))
-    return cur.fetchone() is not None
+from function import (
+    data_json,
+    dados_requisicao,
+    emprestimo_existe,
+    numero_json,
+    salvar_anexo,
+    texto_json,
+    usuario_pode_gerenciar_doacoes,
+    validar_emprestimo
+)
 
 
 @app.route('/emprestimos', methods=['GET'])
@@ -69,28 +26,33 @@ def listar_emprestimos():
                    E.PARCELAS, E.VALIDADE, E.ORIGEM
             FROM EMPRESTIMO E
             INNER JOIN PROJETO P ON P.ID_PROJETO = E.ID_PROJETO
-            INNER JOIN USUARIO U ON U.ID_USUARIO = E.ID_USUARIO
+            LEFT JOIN USUARIO U ON U.ID_USUARIO = E.ID_USUARIO
             ORDER BY E.VALIDADE, E.ID_EMPRESTIMO DESC
         ''')
         emprestimos = []
         for item in cur.fetchall():
-            emprestimos.append({
+            projeto = texto_json(item[2])
+            emprestimo = {
                 'id_emprestimo': item[0],
                 'id_projeto': item[1],
-                'projeto': item[2].strip(),
+                'projeto': projeto,
+                'projeto_nome': projeto,
                 'id_usuario': item[3],
-                'usuario': item[4].strip(),
-                'finalidade': item[5].strip() if item[5] else '',
-                'valor': float(item[6]) if item[6] is not None else None,
-                'data': item[7].isoformat() if item[7] else None,
-                'dia': item[7].isoformat() if item[7] else None,
-                'devolucao': item[8].isoformat() if item[8] else None,
+                'usuario': texto_json(item[4]),
+                'finalidade': texto_json(item[5]),
+                'valor': numero_json(item[6]),
+                'data': data_json(item[7]),
+                'dia': data_json(item[7]),
+                'devolucao': data_json(item[8]),
                 'parcelas': item[9],
-                'validade': item[10].isoformat() if item[10] else None,
-                'vencimento': item[10].isoformat() if item[10] else None,
-                'origem': item[11].strip() if item[11] else ''
-            })
+                'validade': data_json(item[10]),
+                'vencimento': data_json(item[10]),
+                'origem': texto_json(item[11])
+            }
+            emprestimos.append(emprestimo)
         return jsonify({'sucesso': True, 'emprestimos': emprestimos}), 200
+    except Exception as erro:
+        return jsonify({'sucesso': False, 'erro': f'Erro ao listar empréstimos: {erro}'}), 500
     finally:
         cur.close()
 
@@ -120,9 +82,6 @@ def cadastrar_emprestimo():
         con.commit()
         return jsonify({'sucesso': True, 'id_emprestimo': id_emprestimo, 'anexo': anexo,
                         'mensagem': 'Empréstimo cadastrado com sucesso!'}), 201
-    except ValueError as erro:
-        con.rollback()
-        return jsonify({'sucesso': False, 'mensagem': str(erro)}), 400
     except Exception as erro:
         con.rollback()
         return jsonify({'sucesso': False, 'erro': f'Erro ao cadastrar empréstimo: {erro}'}), 500
@@ -132,36 +91,8 @@ def cadastrar_emprestimo():
 
 @app.route('/emprestimos/<int:id_emprestimo>', methods=['PUT'])
 def editar_emprestimo(id_emprestimo):
-    if not usuario_pode_gerenciar_doacoes():
-        return jsonify({'sucesso': False, 'mensagem': 'Acesso não autorizado'}), 403
-
-    cur = con.cursor()
-    try:
-        if not emprestimo_existe(id_emprestimo, cur):
-            return jsonify({'sucesso': False, 'mensagem': 'Empréstimo não encontrado.'}), 404
-        emprestimo, erro = validar_emprestimo(dados_requisicao(), cur)
-        if erro:
-            return jsonify({'sucesso': False, 'mensagem': erro}), 400
-        cur.execute('''
-            UPDATE EMPRESTIMO
-            SET ID_PROJETO = ?, ID_USUARIO = ?, FINALIDADE = ?, VALOR = ?, DIA = ?,
-                DEVOLUCAO = ?, PARCELAS = ?, VALIDADE = ?, ORIGEM = ?
-            WHERE ID_EMPRESTIMO = ?
-        ''', (emprestimo['id_projeto'], emprestimo['id_usuario'], emprestimo['finalidade'],
-              emprestimo['valor'], emprestimo['dia'], emprestimo['devolucao'],
-              emprestimo['parcelas'], emprestimo['validade'], emprestimo['origem'],
-              id_emprestimo))
-        salvar_anexo(request.files.get('anexo'), 'emprestimos', 'emprestimo', id_emprestimo)
-        con.commit()
-        return jsonify({'sucesso': True, 'mensagem': 'Empréstimo atualizado com sucesso!'}), 200
-    except ValueError as erro:
-        con.rollback()
-        return jsonify({'sucesso': False, 'mensagem': str(erro)}), 400
-    except Exception as erro:
-        con.rollback()
-        return jsonify({'sucesso': False, 'erro': f'Erro ao atualizar empréstimo: {erro}'}), 500
-    finally:
-        cur.close()
+    return jsonify({'sucesso': False,
+                    'mensagem': 'Empréstimos não podem ser alterados depois de criados.'}), 405
 
 
 @app.route('/emprestimos/<int:id_emprestimo>', methods=['DELETE'])
@@ -197,8 +128,6 @@ def salvar_anexo_emprestimo(id_emprestimo):
             return jsonify({'sucesso': False, 'mensagem': 'Selecione um comprovante para enviar.'}), 400
         return jsonify({'sucesso': True, 'anexo': anexo,
                         'mensagem': 'Comprovante salvo com sucesso.'}), 200
-    except ValueError as erro:
-        return jsonify({'sucesso': False, 'mensagem': str(erro)}), 400
     except Exception as erro:
         return jsonify({'sucesso': False, 'erro': f'Erro ao salvar comprovante: {erro}'}), 500
     finally:
