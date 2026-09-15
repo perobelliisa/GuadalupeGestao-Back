@@ -143,7 +143,7 @@ def cadastrar_emprestimo():
         # Cria a entrada correspondente no livro-caixa.
         id_livro_caixa = inserir_entrada_automatica(
             cur, emprestimo['finalidade'], emprestimo['valor'], emprestimo['dia'],
-            emprestimo['devolucao'], emprestimo['origem'])
+            emprestimo['devolucao'], emprestimo['origem'], f'EMPRESTIMO:{id_emprestimo}')
         # Atribui a variável 'anexo' o resultado da expressão 'salvar_anexo(request.files.get('anexo'), 'emprestimos', 'emprestimo', id_emprestimo)'.
         anexo = salvar_anexo(request.files.get('anexo'), 'emprestimos', 'emprestimo', id_emprestimo)
         # Confirma definitivamente as alterações feitas na transação.

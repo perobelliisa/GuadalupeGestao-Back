@@ -21,6 +21,8 @@ from function import (
     localizar_anexo,
     # Disponibiliza o recurso inserir_entrada_automatica para as funções deste módulo.
     inserir_entrada_automatica,
+    # Disponibiliza o recurso sincronizar_entrada_doacao para as funções deste módulo.
+    sincronizar_entrada_doacao,
     # Disponibiliza o recurso usuario_pode_gerenciar_doacoes para as funções deste módulo.
     usuario_pode_gerenciar_doacoes,
     # Disponibiliza o recurso validar_doacao para as funções deste módulo.
@@ -135,8 +137,7 @@ def cadastrar_doacao():
         # Obtém um valor do primeiro registro e o armazena em 'id_doacao'.
         id_doacao = cur.fetchone()[0]
         # Cria a entrada correspondente no livro-caixa.
-        id_livro_caixa = inserir_entrada_automatica(
-            cur, 'Doação', doacao['valor'], doacao['data'], None, doacao['doador'])
+        id_livro_caixa = sincronizar_entrada_doacao(cur, id_doacao, doacao)
         # Atribui a variável 'anexo' o resultado da expressão 'salvar_anexo(request.files.get('anexo'), 'doacoes', 'doacao', id_doacao)'.
         anexo = salvar_anexo(request.files.get('anexo'), 'doacoes', 'doacao', id_doacao)
         # Confirma definitivamente as alterações feitas na transação.
@@ -176,6 +177,9 @@ def editar_doacao(id_doacao):
             # Retorna uma resposta JSON de erro com status HTTP 404.
             return jsonify({'sucesso': False, 'mensagem': 'Doação não encontrada.'}), 404
 
+        cur.execute('SELECT DOADOR, DIA, TIPO FROM DOACAO WHERE ID_DOACAO = ?', (id_doacao,))
+        doacao_antiga = cur.fetchone()
+
         # Obtém os dados da requisição e os armazena em 'doacao, erro'.
         doacao, erro = validar_doacao(dados_requisicao(), cur)
         # Verifica se a validação retornou uma mensagem de erro.
@@ -192,6 +196,7 @@ def editar_doacao(id_doacao):
         ''', (doacao['id_projeto'], doacao['doador'], doacao['data'], doacao['tipo'],  # Fecha a string SQL usada pela consulta.
               # Conclui a chamada anterior enviando os valores preparados para o banco.
               doacao['valor'], doacao['quantidade'], doacao['descricao'], id_doacao))
+        id_livro_caixa = sincronizar_entrada_doacao(cur, id_doacao, doacao, doacao_antiga)
         # Atribui a variável 'anexo' o resultado da expressão 'salvar_anexo(request.files.get('anexo'), 'doacoes', 'doacao', id_doacao)'.
         anexo = salvar_anexo(request.files.get('anexo'), 'doacoes', 'doacao', id_doacao)
         # Verifica se a condição anexo é falsa.
@@ -201,7 +206,7 @@ def editar_doacao(id_doacao):
         # Confirma definitivamente as alterações feitas na transação.
         con.commit()
         # Inicia a resposta JSON que será devolvida por este endpoint.
-        return jsonify({'sucesso': True, 'anexo': anexo,
+        return jsonify({'sucesso': True, 'id_livro_caixa': id_livro_caixa, 'anexo': anexo,
                         # Preenche o campo 'mensagem' do objeto ou resposta que está sendo montado.
                         'mensagem': 'Doação atualizada com sucesso!'}), 200
     # Captura o erro Exception as erro e permite tratá-lo.
@@ -235,6 +240,9 @@ def excluir_doacao(id_doacao):
             return jsonify({'sucesso': False, 'mensagem': 'Doação não encontrada.'}), 404
         # Executa no banco a consulta SQL 'DELETE FROM ITEM_DOACAO WHERE ID_DOACAO = ?'.
         cur.execute('DELETE FROM ITEM_DOACAO WHERE ID_DOACAO = ?', (id_doacao,))
+        # Remove a entrada automática da doação, se existir.
+        cur.execute('DELETE FROM LIVRO_CAIXA WHERE TIPO = 0 AND OBSERVACAO = ?',
+                    (f'DOACAO:{id_doacao}',))
         # Executa no banco a consulta SQL 'DELETE FROM DOACAO WHERE ID_DOACAO = ?'.
         cur.execute('DELETE FROM DOACAO WHERE ID_DOACAO = ?', (id_doacao,))
         # Confirma definitivamente as alterações feitas na transação.

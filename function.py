@@ -995,7 +995,7 @@ def inserir_lancamento(cur, lancamento, tipo):
 
 
 # Define a função inserir_entrada_automatica, que cria uma entrada gerada por doação ou empréstimo.
-def inserir_entrada_automatica(cur, descricao, valor, data, vencimento, origem):
+def inserir_entrada_automatica(cur, descricao, valor, data, vencimento, origem, observacao='Entrada criada automaticamente.'):
     if valor is None:
         valor = Decimal('0')
     lancamento = {
@@ -1012,9 +1012,38 @@ def inserir_entrada_automatica(cur, descricao, valor, data, vencimento, origem):
         'conta': 0,
         'origem': origem,
         'forma_pagamento': 0,
-        'observacao': 'Entrada criada automaticamente.'
+        'observacao': observacao
     }
     return inserir_lancamento(cur, lancamento, 0)
+
+
+def sincronizar_entrada_doacao(cur, id_doacao, doacao, doacao_antiga=None):
+    observacao = f'DOACAO:{id_doacao}'
+    if doacao['tipo'] == 0:
+        cur.execute('SELECT ID_LIVRO_CAIXA FROM LIVRO_CAIXA WHERE TIPO = 0 AND OBSERVACAO = ?', (observacao,))
+        registro = cur.fetchone()
+        if not registro and doacao_antiga:
+            cur.execute('''
+                SELECT ID_LIVRO_CAIXA
+                FROM LIVRO_CAIXA
+                WHERE TIPO = 0 AND DESCRICAO = 'Doação'
+                  AND ORIGEM = ? AND DIA = ?
+                  AND OBSERVACAO = 'Entrada criada automaticamente.'
+            ''', (doacao_antiga[0], doacao_antiga[1]))
+            registro = cur.fetchone()
+        if registro:
+            cur.execute('''
+                UPDATE LIVRO_CAIXA
+                SET VALOR = ?, DIA = ?, ORIGEM = ?, DESCRICAO = 'Doação'
+                WHERE ID_LIVRO_CAIXA = ?
+            ''', (doacao['valor'], doacao['data'], doacao['doador'], registro[0]))
+            return registro[0]
+        return inserir_entrada_automatica(
+            cur, 'Doação', doacao['valor'], doacao['data'], None,
+            doacao['doador'], observacao)
+
+    cur.execute('DELETE FROM LIVRO_CAIXA WHERE TIPO = 0 AND OBSERVACAO = ?', (observacao,))
+    return None
 
 
 # Define a função editar_lancamento, que atualiza um lançamento existente.
