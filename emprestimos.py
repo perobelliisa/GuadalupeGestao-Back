@@ -11,6 +11,8 @@ from function import (
     dados_requisicao,
     # Disponibiliza o recurso emprestimo_existe para as funções deste módulo.
     emprestimo_existe,
+    # Disponibiliza o recurso inserir_entrada_automatica para as funções deste módulo.
+    inserir_entrada_automatica,
     # Disponibiliza o recurso numero_json para as funções deste módulo.
     numero_json,
     # Disponibiliza o recurso salvar_anexo para as funções deste módulo.
@@ -138,12 +140,17 @@ def cadastrar_emprestimo():
               emprestimo['parcelas'], 0, emprestimo['validade'], emprestimo['origem']))
         # Obtém um valor do primeiro registro e o armazena em 'id_emprestimo'.
         id_emprestimo = cur.fetchone()[0]
+        # Cria a entrada correspondente no livro-caixa.
+        id_livro_caixa = inserir_entrada_automatica(
+            cur, emprestimo['finalidade'], emprestimo['valor'], emprestimo['dia'],
+            emprestimo['devolucao'], emprestimo['origem'])
         # Atribui a variável 'anexo' o resultado da expressão 'salvar_anexo(request.files.get('anexo'), 'emprestimos', 'emprestimo', id_emprestimo)'.
         anexo = salvar_anexo(request.files.get('anexo'), 'emprestimos', 'emprestimo', id_emprestimo)
         # Confirma definitivamente as alterações feitas na transação.
         con.commit()
         # Inicia a resposta JSON que será devolvida por este endpoint.
-        return jsonify({'sucesso': True, 'id_emprestimo': id_emprestimo, 'anexo': anexo,
+        return jsonify({'sucesso': True, 'id_emprestimo': id_emprestimo,
+                        'id_livro_caixa': id_livro_caixa, 'anexo': anexo,
                         # Preenche o campo 'mensagem' do objeto ou resposta que está sendo montado.
                         'mensagem': 'Empréstimo cadastrado com sucesso!'}), 201
     # Captura o erro Exception as erro e permite tratá-lo.

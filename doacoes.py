@@ -19,6 +19,8 @@ from function import (
     data_json,
     # Disponibiliza o recurso localizar_anexo para as funções deste módulo.
     localizar_anexo,
+    # Disponibiliza o recurso inserir_entrada_automatica para as funções deste módulo.
+    inserir_entrada_automatica,
     # Disponibiliza o recurso usuario_pode_gerenciar_doacoes para as funções deste módulo.
     usuario_pode_gerenciar_doacoes,
     # Disponibiliza o recurso validar_doacao para as funções deste módulo.
@@ -132,12 +134,16 @@ def cadastrar_doacao():
               doacao['valor'], doacao['quantidade'], doacao['descricao']))
         # Obtém um valor do primeiro registro e o armazena em 'id_doacao'.
         id_doacao = cur.fetchone()[0]
+        # Cria a entrada correspondente no livro-caixa.
+        id_livro_caixa = inserir_entrada_automatica(
+            cur, 'Doação', doacao['valor'], doacao['data'], None, doacao['doador'])
         # Atribui a variável 'anexo' o resultado da expressão 'salvar_anexo(request.files.get('anexo'), 'doacoes', 'doacao', id_doacao)'.
         anexo = salvar_anexo(request.files.get('anexo'), 'doacoes', 'doacao', id_doacao)
         # Confirma definitivamente as alterações feitas na transação.
         con.commit()
         # Inicia a resposta JSON que será devolvida por este endpoint.
-        return jsonify({'sucesso': True, 'id_doacao': id_doacao, 'anexo': anexo,
+        return jsonify({'sucesso': True, 'id_doacao': id_doacao,
+                        'id_livro_caixa': id_livro_caixa, 'anexo': anexo,
                         # Preenche o campo 'mensagem' do objeto ou resposta que está sendo montado.
                         'mensagem': 'Doação cadastrada com sucesso!'}), 201
     # Captura o erro Exception as erro e permite tratá-lo.

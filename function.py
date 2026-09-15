@@ -994,6 +994,29 @@ def inserir_lancamento(cur, lancamento, tipo):
     return cur.fetchone()[0]
 
 
+# Define a função inserir_entrada_automatica, que cria uma entrada gerada por doação ou empréstimo.
+def inserir_entrada_automatica(cur, descricao, valor, data, vencimento, origem):
+    if valor is None:
+        valor = Decimal('0')
+    lancamento = {
+        'id_categoria': None,
+        'descricao': descricao,
+        'valor': valor,
+        'data': data,
+        'vencimento': vencimento,
+        'fornecedor': '',
+        'status': 1,
+        'recorrencia': 0,
+        'dia_inicio': None,
+        'dia_fim': None,
+        'conta': 0,
+        'origem': origem,
+        'forma_pagamento': 0,
+        'observacao': 'Entrada criada automaticamente.'
+    }
+    return inserir_lancamento(cur, lancamento, 0)
+
+
 # Define a função editar_lancamento, que atualiza um lançamento existente.
 def editar_lancamento(cur, id_lancamento, lancamento, tipo):
     # Inicia a execução da consulta ou comando SQL no banco de dados.
