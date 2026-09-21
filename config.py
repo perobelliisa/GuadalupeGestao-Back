@@ -8,7 +8,7 @@ DEBUG = True
 # Atribui a variável 'DB_HOST' o resultado da expressão ''localhost''.
 DB_HOST = 'localhost'
 # Atribui a variável 'DB_NAME' o resultado da expressão 'r'C:\Users\Guilherme kawanami\OneDrive\Documentos\GitHub\GuadalupeGestao-Back\BANCO.FDB''.
-DB_NAME = r'C:\Users\Guilherme kawanami\OneDrive\Documentos\GitHub\GuadalupeGestao-Back\BANCO.FDB'
+DB_NAME = r'C:\Users\Aluno\Desktop\GuadalupeGestao-Back\BANCO.FDB'
 
 # Atribui a variável 'DB_USER' o resultado da expressão ''SYSDBA''.
 DB_USER = 'SYSDBA'

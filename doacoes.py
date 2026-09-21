@@ -35,6 +35,36 @@ from function import (
 )
 
 
+def reparar_entradas_de_doacoes_em_dinheiro():
+    """Cria no livro-caixa as entradas ausentes de doações em dinheiro."""
+    cur = con.cursor()
+    try:
+        cur.execute('''
+            SELECT D.ID_DOACAO, D.ID_PROJETO, D.DOADOR, D.DIA, D.VALOR
+            FROM DOACAO D
+            LEFT JOIN LIVRO_CAIXA L
+              ON L.TIPO = 0
+             AND L.OBSERVACAO = 'DOACAO:' || CAST(D.ID_DOACAO AS VARCHAR(20))
+            WHERE D.TIPO = 0 AND L.ID_LIVRO_CAIXA IS NULL
+        ''')
+        pendentes = cur.fetchall()
+        for item in pendentes:
+            inserir_entrada_automatica(
+                cur, 'Doação', item[4], item[3], None, item[2],
+                f'DOACAO:{item[0]}', item[1]
+            )
+        if pendentes:
+            con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+reparar_entradas_de_doacoes_em_dinheiro()
+
+
 # Registra o endpoint '/doacoes', methods=['GET'], associando a URL aos métodos HTTP informados.
 @app.route('/doacoes', methods=['GET'])
 # Define a função listar_doacoes, que lista as doações cadastradas.

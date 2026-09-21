@@ -61,6 +61,8 @@ from doacoes import *
 from emprestimos import *
 # Importa * do módulo livro_caixa para uso neste arquivo.
 from livro_caixa import *
+from documentos import *
+from relatorios import *
 
 
 # Verifica se __name__ == '__main__'.

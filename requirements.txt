@@ -3,3 +3,4 @@ Flask-Bcrypt
 PyJWT
 fdb
 Flask-Cors
+ReportLab

@@ -995,7 +995,7 @@ def inserir_lancamento(cur, lancamento, tipo):
 
 
 # Define a função inserir_entrada_automatica, que cria uma entrada gerada por doação ou empréstimo.
-def inserir_entrada_automatica(cur, descricao, valor, data, vencimento, origem, observacao='Entrada criada automaticamente.'):
+def inserir_entrada_automatica(cur, descricao, valor, data, vencimento, origem, observacao='Entrada criada automaticamente.', conta=0):
     if valor is None:
         valor = Decimal('0')
     lancamento = {
@@ -1009,7 +1009,7 @@ def inserir_entrada_automatica(cur, descricao, valor, data, vencimento, origem, 
         'recorrencia': 0,
         'dia_inicio': None,
         'dia_fim': None,
-        'conta': 0,
+        'conta': conta or 0,
         'origem': origem,
         'forma_pagamento': 0,
         'observacao': observacao
@@ -1034,13 +1034,13 @@ def sincronizar_entrada_doacao(cur, id_doacao, doacao, doacao_antiga=None):
         if registro:
             cur.execute('''
                 UPDATE LIVRO_CAIXA
-                SET VALOR = ?, DIA = ?, ORIGEM = ?, DESCRICAO = 'Doação'
+                SET VALOR = ?, DIA = ?, ORIGEM = ?, CONTA = ?, DESCRICAO = 'Doação'
                 WHERE ID_LIVRO_CAIXA = ?
-            ''', (doacao['valor'], doacao['data'], doacao['doador'], registro[0]))
+            ''', (doacao['valor'], doacao['data'], doacao['doador'], doacao['id_projeto'] or 0, registro[0]))
             return registro[0]
         return inserir_entrada_automatica(
             cur, 'Doação', doacao['valor'], doacao['data'], None,
-            doacao['doador'], observacao)
+            doacao['doador'], observacao, doacao['id_projeto'])
 
     cur.execute('DELETE FROM LIVRO_CAIXA WHERE TIPO = 0 AND OBSERVACAO = ?', (observacao,))
     return None
