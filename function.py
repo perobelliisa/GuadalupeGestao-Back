@@ -966,6 +966,7 @@ def listar_lancamentos(cur, tipo=None):
         # Fecha o dicionário que está sendo montado.
         }
         # Adiciona o item atual à lista acumulada.
+        lancamento['anexo'] = localizar_anexo('movimentacoes', 'movimentacao', item[0])
         lancamentos.append(lancamento)
     # Retorna lancamentos.
     return lancamentos
@@ -991,7 +992,9 @@ def inserir_lancamento(cur, lancamento, tipo):
           # Conclui a chamada anterior enviando os valores preparados para o banco.
           lancamento['origem'], lancamento['forma_pagamento'], lancamento['observacao']))
     # Retorna cur.fetchone()[0].
-    return cur.fetchone()[0]
+    id_lancamento = cur.fetchone()[0]
+    salvar_anexo(request.files.get('anexo'), 'movimentacoes', 'movimentacao', id_lancamento)
+    return id_lancamento
 
 
 # Define a função inserir_entrada_automatica, que cria uma entrada gerada por doação ou empréstimo.
