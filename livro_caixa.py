@@ -579,3 +579,31 @@ def pagar_pendencia(tipo, identificador):
         finally:
             cur.close()
             conexao.close()
+
+
+"""Rota a acrescentar a livro_caixa.py no backend."""
+from function import salvar_anexo, localizar_anexo
+
+
+@app.route('/livro-caixa/<int:id_lancamento>/anexo', methods=['POST'])
+def salvar_comprovante_lancamento(id_lancamento):
+    if not usuario_pode_gerenciar_doacoes():
+        return jsonify({'sucesso': False, 'mensagem': 'Acesso não autorizado'}), 403
+
+    cur = con.cursor()
+    try:
+        if tipo_lancamento(id_lancamento, cur) is None:
+            return jsonify({'sucesso': False, 'mensagem': 'Lançamento não encontrado.'}), 404
+        if localizar_anexo('movimentacoes', 'movimentacao', id_lancamento):
+            return jsonify({'sucesso': False, 'mensagem': 'Este lançamento já tem comprovante. Atualize a lista.'}), 409
+        anexo = salvar_anexo(request.files.get('anexo'), 'movimentacoes', 'movimentacao', id_lancamento)
+        if not anexo:
+            return jsonify({'sucesso': False, 'mensagem': 'Selecione um comprovante para enviar.'}), 400
+        return jsonify({'sucesso': True, 'anexo': anexo}), 200
+    except ValueError as erro:
+        return jsonify({'sucesso': False, 'mensagem': str(erro)}), 400
+    except Exception:
+        app.logger.exception('Erro ao salvar comprovante')
+        return jsonify({'sucesso': False, 'mensagem': 'Não foi possível salvar o comprovante.'}), 500
+    finally:
+        cur.close()
