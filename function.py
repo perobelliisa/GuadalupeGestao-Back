@@ -1,3 +1,7 @@
+from calendar import monthrange
+from datetime import date, timedelta
+from decimal import ROUND_HALF_UP
+import fdb
 # Importa o módulo datetime para disponibilizar seus recursos.
 import datetime
 # Importa o módulo os para disponibilizar seus recursos.
@@ -296,7 +300,7 @@ def gerar_token(id_user):
         # Preenche o campo 'timestamp' do objeto ou resposta que está sendo montado.
         'timestamp': datetime.datetime.utcnow().isoformat(),
         # Preenche o campo 'exp' do objeto ou resposta que está sendo montado.
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=5000)
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=app.config['AUTH_TOKEN_MAX_AGE'])
     # Fecha o dicionário que está sendo montado.
     }
     # Retorna jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256').
@@ -1089,3 +1093,165 @@ def tipo_lancamento(id_lancamento, cur):
         return registro[0]
     # Retorna None.
     return None
+
+
+# Funcoes das pendencias financeiras.
+INTERVALOS_PENDENCIAS = {1: 15, 2: 30, 3: 1, 4: 7}
+
+
+# Converte uma data do banco ou da tela para uma data sem horario.
+def data_civil(valor):
+    return date.fromisoformat(str(valor)[:10])
+
+
+# Define a prioridade pela quantidade de dias que faltam para vencer.
+def prioridade(dias):
+    if dias <= 2:
+        return 'Alta'
+    if dias < 14:
+        return 'Média'
+    return 'Baixa'
+
+
+# Encontra o primeiro vencimento da conta que ainda nao foi pago.
+def proxima_conta(item, pagamentos):
+    intervalo = INTERVALOS_PENDENCIAS.get(int(item.get('recorrencia') or 0))
+    if not intervalo:
+        return None
+    inicio = data_civil(item['dia_inicio'])
+    fim = data_civil(item['dia_fim'])
+    if fim < inicio:
+        raise ValueError('O fim da recorrência é anterior ao início.')
+    # Monta a lista de vencimentos que ja foram pagos.
+    pagas = []
+    for pagamento in pagamentos:
+        pagas.append(data_civil(pagamento))
+    # O status do lançamento original representa somente o primeiro vencimento.
+    if int(item.get('status') or 0) == 1:
+        pagas.append(inicio)
+    vencimento = inicio
+    while vencimento in pagas and vencimento <= fim:
+        vencimento += timedelta(days=intervalo)
+    # Nao cria uma cobranca depois do fim cadastrado.
+    if vencimento > fim:
+        return None
+    return vencimento
+
+
+# Calcula a data e o valor da proxima parcela do emprestimo.
+def proxima_parcela(item):
+    total = int(item.get('parcelas') or 0)
+    pagas = int(item.get('parcelas_pagas') or 0)
+    if total <= 1:
+        return None
+    if pagas < 0 or pagas > total:
+        raise ValueError('Quantidade de parcelas pagas inválida.')
+    if pagas == total:
+        return None
+    inicio = data_civil(item['dia'])
+    numero = pagas + 1
+    indice = inicio.year * 12 + inicio.month - 1 + numero
+    # Divide os meses em anos completos e no mes restante.
+    ano = indice // 12
+    mes = indice % 12
+    mes += 1
+    vencimento = date(ano, mes, min(inicio.day, monthrange(ano, mes)[1]))
+    centavos = int((Decimal(str(item['valor'])) * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+    base = centavos // total
+    resto = centavos % total
+    # A última parcela absorve o resto, sem perder centavos do valor contratado.
+    valor_centavos = base
+    if numero == total:
+        valor_centavos += resto
+    valor = Decimal(valor_centavos) / 100
+    return vencimento, numero, valor
+
+# Abre uma conexao separada para nao misturar pagamentos de usuarios diferentes.
+def abrir_conexao():
+    # Uma transação por requisição evita interferência entre pagamentos simultâneos.
+    return fdb.connect(host=app.config['DB_HOST'], database=app.config['DB_NAME'],
+                       user=app.config['DB_USER'], password=app.config['DB_PASSWORD'])
+
+
+# Cria o controle de pagamentos somente quando a tabela ainda nao existe.
+def preparar_tabela_pendencias():
+    cur = con.cursor()
+    try:
+        cur.execute("SELECT RDB$RELATION_NAME FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = 'PAGAMENTO_RECORRENCIA'")
+        if not cur.fetchone():
+            cur.execute('''CREATE TABLE PAGAMENTO_RECORRENCIA (
+                ID_ORIGEM INTEGER NOT NULL,
+                VENCIMENTO DATE NOT NULL,
+                ID_PAGAMENTO INTEGER NOT NULL,
+                PRIMARY KEY (ID_ORIGEM, VENCIMENTO),
+                FOREIGN KEY (ID_ORIGEM) REFERENCES LIVRO_CAIXA (ID_LIVRO_CAIXA),
+                FOREIGN KEY (ID_PAGAMENTO) REFERENCES LIVRO_CAIXA (ID_LIVRO_CAIXA)
+            )''')
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# Reune as contas recorrentes e as parcelas que continuam em aberto.
+def carregar_pendencias(cur):
+    cur.execute('''SELECT P.ID_ORIGEM, P.VENCIMENTO FROM PAGAMENTO_RECORRENCIA P
+        JOIN LIVRO_CAIXA L ON L.ID_LIVRO_CAIXA = P.ID_PAGAMENTO WHERE L.STATUS = 1''')
+    pagamentos = {}
+    for origem, vencimento in cur.fetchall():
+        if origem not in pagamentos:
+            pagamentos[origem] = []
+        pagamentos[origem].append(vencimento)
+    pendencias = []
+    invalidos = []
+    for item in listar_lancamentos(cur, 1):
+        try:
+            vencimento = proxima_conta(item, pagamentos.get(item['id_livro_caixa'], []))
+            if vencimento:
+                pendencia = {
+                    'tipo': 'despesa',
+                    'id': item['id_livro_caixa'],
+                    'descricao': item['descricao'],
+                    'conta': item['conta'],
+                    'valor': item['valor'],
+                    'vencimento': vencimento.isoformat()
+                }
+                pendencias.append(pendencia)
+        except (ValueError, TypeError, KeyError):
+            invalidos.append(f"Despesa {item['id_livro_caixa']}: confira as datas da recorrência.")
+    cur.execute('SELECT ID_EMPRESTIMO, FINALIDADE, ID_PROJETO, VALOR, DIA, PARCELAS, PARCELAS_PAGAS FROM EMPRESTIMO')
+    for registro in cur.fetchall():
+        item = {
+            'id': registro[0],
+            'descricao': registro[1],
+            'conta': registro[2],
+            'valor': registro[3],
+            'dia': registro[4],
+            'parcelas': registro[5],
+            'parcelas_pagas': registro[6]
+        }
+        try:
+            proxima = proxima_parcela(item)
+            if proxima:
+                vencimento, numero, valor = proxima
+                pendencia = {
+                    'tipo': 'emprestimo',
+                    'id': item['id'],
+                    'descricao': item['descricao'],
+                    'conta': item['conta'],
+                    'valor': float(valor),
+                    'vencimento': vencimento.isoformat(),
+                    'parcela': numero,
+                    'parcelas': item['parcelas']
+                }
+                pendencias.append(pendencia)
+        except (ValueError, TypeError, KeyError):
+            invalidos.append(f"Empréstimo {item['id']}: confira as datas e parcelas.")
+    hoje = date.today()
+    for item in pendencias:
+        item['dias'] = (data_civil(item['vencimento']) - hoje).days
+        item['prioridade'] = prioridade(item['dias'])
+        item['chave'] = f"{item['tipo']}:{item['id']}:{item['vencimento']}"
+    return sorted(pendencias, key=lambda item: (item['vencimento'], item['chave'])), invalidos

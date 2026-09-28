@@ -63,6 +63,8 @@ from emprestimos import *
 from livro_caixa import *
 from documentos import *
 from relatorios import *
+from function import preparar_tabela_pendencias
+preparar_tabela_pendencias()
 
 
 # Verifica se __name__ == '__main__'.

@@ -1,3 +1,10 @@
+from datetime import date
+from threading import RLock
+from function import abrir_conexao, carregar_pendencias, data_civil
+
+# Evita dois pagamentos simultaneos da mesma ocorrencia neste servidor.
+trava_pagamento_pendencias = RLock()
+
 # Importa jsonify, request do módulo flask para uso neste arquivo.
 from flask import jsonify, request
 
@@ -477,3 +484,98 @@ def excluir_despesa(id_lancamento):
     finally:
         # Fecha o cursor para liberar o recurso do banco.
         cur.close()
+
+
+@app.route('/pendencias', methods=['GET'])
+# Consulta as pendencias e devolve os dados para a pagina.
+def listar_pendencias():
+    if not usuario_pode_gerenciar_doacoes():
+        return jsonify(sucesso=False, mensagem='Acesso não autorizado.'), 403
+    with trava_pagamento_pendencias:
+        conexao = abrir_conexao()
+        cur = conexao.cursor()
+        try:
+            pendencias, avisos = carregar_pendencias(cur)
+            conexao.commit()
+            return jsonify(sucesso=True, pendencias=pendencias, avisos=avisos)
+        except Exception:
+            conexao.rollback()
+            app.logger.exception('Erro ao consultar pendências')
+            return jsonify(sucesso=False, mensagem='Não foi possível consultar as pendências.'), 500
+        finally:
+            cur.close()
+            conexao.close()
+
+
+@app.route('/pendencias/<tipo>/<int:identificador>/pagar', methods=['POST'])
+# Confere o vencimento e salva apenas o pagamento selecionado.
+def pagar_pendencia(tipo, identificador):
+    if not usuario_pode_gerenciar_doacoes():
+        return jsonify(sucesso=False, mensagem='Acesso não autorizado.'), 403
+    dados = request.get_json(silent=True)
+    if tipo not in ('despesa', 'emprestimo') or not isinstance(dados, dict):
+        return jsonify(sucesso=False, mensagem='Pendência inválida.'), 400
+    try:
+        vencimento = data_civil(dados.get('vencimento', ''))
+    except (ValueError, TypeError):
+        return jsonify(sucesso=False, mensagem='Vencimento inválido.'), 400
+    with trava_pagamento_pendencias:
+        conexao = abrir_conexao()
+        cur = conexao.cursor()
+        try:
+            pendencias, _ = carregar_pendencias(cur)
+            # Procura exatamente o vencimento escolhido na tela.
+            atual = None
+            for item in pendencias:
+                if item['tipo'] == tipo and item['id'] == identificador:
+                    if item['vencimento'] == vencimento.isoformat():
+                        atual = item
+                        break
+            if not atual:
+                conexao.rollback()
+                return jsonify(sucesso=False, mensagem='Esta ocorrência já foi paga ou alterada. Atualize a lista.'), 409
+            if tipo == 'emprestimo':
+                cur.execute('''UPDATE EMPRESTIMO SET PARCELAS_PAGAS = ?
+                    WHERE ID_EMPRESTIMO = ? AND COALESCE(PARCELAS_PAGAS, 0) = ?''',
+                    (atual['parcela'], identificador, atual['parcela'] - 1))
+                if cur.rowcount != 1:
+                    raise ValueError('Pagamento alterado por outro usuário.')
+            else:
+                # Encontra os dados da conta que deu origem a recorrencia.
+                origem = None
+                for lancamento in listar_lancamentos(cur, 1):
+                    if lancamento['id_livro_caixa'] == identificador:
+                        origem = lancamento
+                        break
+                if origem is None:
+                    raise ValueError('Conta nao encontrada.')
+                if vencimento == data_civil(origem['dia_inicio']):
+                    cur.execute('UPDATE LIVRO_CAIXA SET STATUS = 1 WHERE ID_LIVRO_CAIXA = ? AND COALESCE(STATUS, 0) <> 1', (identificador,))
+                    if cur.rowcount != 1:
+                        raise ValueError('Pagamento alterado por outro usuário.')
+                else:
+                    cur.execute('SELECT ID_PAGAMENTO FROM PAGAMENTO_RECORRENCIA WHERE ID_ORIGEM = ? AND VENCIMENTO = ?', (identificador, vencimento))
+                    existente = cur.fetchone()
+                    if existente:
+                        cur.execute('UPDATE LIVRO_CAIXA SET STATUS = 1 WHERE ID_LIVRO_CAIXA = ?', (existente[0],))
+                    else:
+                        # Copia a conta e grava somente este pagamento no livro-caixa.
+                        pagamento = origem.copy()
+                        pagamento['data'] = date.today()
+                        pagamento['vencimento'] = vencimento
+                        pagamento['status'] = 1
+                        pagamento['recorrencia'] = 0
+                        pagamento['dia_inicio'] = None
+                        pagamento['dia_fim'] = None
+                        id_pagamento = inserir_lancamento(cur, pagamento, 1)
+                        cur.execute('INSERT INTO PAGAMENTO_RECORRENCIA (ID_ORIGEM, VENCIMENTO, ID_PAGAMENTO) VALUES (?, ?, ?)',
+                            (identificador, vencimento, id_pagamento))
+            conexao.commit()
+            return jsonify(sucesso=True, mensagem='Pagamento registrado.', chave=atual['chave'])
+        except Exception:
+            conexao.rollback()
+            app.logger.exception('Erro ao registrar pagamento de pendência')
+            return jsonify(sucesso=False, mensagem='Não foi possível registrar o pagamento. Atualize a lista antes de tentar novamente.'), 409
+        finally:
+            cur.close()
+            conexao.close()

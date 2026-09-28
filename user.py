@@ -584,8 +584,8 @@ def login():
         resposta.set_cookie(
             # Atribui a variável ''access_token', token, httponly' o resultado da expressão 'True, secure=False,'.
             'access_token', token, httponly=True, secure=False,
-            # Atribui a variável 'samesite' o resultado da expressão ''Lax', path='/', max_age=3600'.
-            samesite='Lax', path='/', max_age=3600
+            # Usa o mesmo prazo do JWT para o navegador nao encerrar a sessao antes do token.
+            samesite='Lax', path='/', max_age=app.config['AUTH_TOKEN_MAX_AGE']
         # Fecha a chamada ou a lista de argumentos iniciada anteriormente.
         )
         # Retorna resposta.

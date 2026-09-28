@@ -17,3 +17,6 @@ DB_PASSWORD = 'sysdba'
 
 # Atribui a variável 'UPLOAD_FOLDER' o resultado da expressão 'os.path.join(os.path.dirname(os.path.abspath(__file__)), 'arquivos')'.
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'arquivos')
+
+# Prazo da autenticacao em segundos, compartilhado pelo JWT e pelo cookie.
+AUTH_TOKEN_MAX_AGE = 5000 * 60
