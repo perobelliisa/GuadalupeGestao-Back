@@ -753,14 +753,20 @@ def obter_categoria_lancamento(dados, cur, tipo):
         # Retorna categoria[0], None.
         return categoria[0], None
 
-    dispositivo = pegar_dispositivo()
+    id_usuario = id_usuario_logado()
+
+    dispositivo = pegar_dispositivo()["nome"]
+
+
+    print(dispositivo)
+    print(id_usuario)
 
     # Inicia a execução da consulta ou comando SQL no banco de dados.
     cur.execute('''
-        INSERT INTO CATEGORIA (NOME, STATUS, TIPO, DESCRICAO, ID_USUARIO, DISPOSITIVO) -- Inicia a inclusão de um novo registro.
+        INSERT INTO CATEGORIA (NOME, STATUS, TIPO, ID_USUARIO, DISPOSITIVO , DESCRICAO) -- Inicia a inclusão de um novo registro.
         VALUES (?, 0, ?, ?, ?, ?) -- Define os valores que serão gravados.
         RETURNING ID_CATEGORIA -- Solicita ao banco o identificador gerado.
-    ''', (nome, tipo, 'Categoria criada pelo cadastro de movimentação.', ID_USUARIO,  dispositivo))  # Fecha a string SQL usada pela consulta.
+    ''', (nome, tipo, id_usuario,  dispositivo, 'Categoria criada pelo cadastro de movimentação.'))  # Fecha a string SQL usada pela consulta.
     # Retorna cur.fetchone()[0], None.
     return cur.fetchone()[0], None
 

@@ -69,6 +69,7 @@ from emprestimos import *
 from livro_caixa import *
 from documentos import *
 from relatorios import *
+import categorias
 from function import preparar_tabela_pendencias
 preparar_tabela_pendencias()
 

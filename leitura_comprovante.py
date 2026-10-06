@@ -22,7 +22,7 @@ def configuracao_gemini():
     arquivo = Path(__file__).with_name('gemini.local.json')
     local = json.loads(arquivo.read_text(encoding='utf-8-sig')) if arquivo.exists() else {}
     chave = (os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY') or local.get('api_key') or '').strip()
-    modelo = (os.environ.get('GEMINI_MODEL') or local.get('model') or 'gemini-3.8-flash').strip()
+    modelo = (os.environ.get('GEMINI_MODEL') or local.get('model') or 'gemini-3.5-flash-lite').strip()
     if not chave:
         raise ErroLeitura('A leitura por IA ainda não foi configurada. Configure a chave do Gemini no servidor.', 422)
     if not re.fullmatch(r'gemini-[a-zA-Z0-9.-]+', modelo):
@@ -108,10 +108,17 @@ def consultar_gemini(imagem, chave, modelo):
     except (ValueError, TypeError):
         raise ErroLeitura('O Gemini retornou uma resposta inválida. Tente novamente.', 502) from None
     try:
+        if resultado.get('status') not in (None, 'completed'):
+            raise ValueError('leitura incompleta')
         texto = resultado.get('output_text')
         if not isinstance(texto, str):
             partes = resultado.get('outputs', resultado.get('output', []))
             texto = ''.join(p.get('text', '') for p in partes if isinstance(p, dict) and p.get('type') == 'text')
+        if not texto:
+            # A API atual retorna o texto dentro dos passos de model_output.
+            passos = resultado.get('steps', [])
+            saida = next((p for p in reversed(passos) if isinstance(p, dict) and p.get('type') == 'model_output'), {})
+            texto = ''.join(p.get('text', '') for p in saida.get('content', []) if isinstance(p, dict) and p.get('type') == 'text')
         if not texto:
             raise ValueError('resposta sem texto')
         dados = json.loads(texto)

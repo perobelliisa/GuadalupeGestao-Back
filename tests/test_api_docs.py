@@ -1,4 +1,4 @@
-﻿"""Regressao da inicializacao e registro da documentacao, sem banco real."""
+"""Regressao da inicializacao e registro da documentacao, sem banco real."""
 import importlib
 import sys
 import types
@@ -38,7 +38,7 @@ class DocumentacaoTest(unittest.TestCase):
         fake_cors = types.ModuleType('flask_cors')
         fake_cors.CORS = lambda *a, **k: None
         mocks = {'__main__': entry, 'fdb': fake_fdb, 'flask_cors': fake_cors}
-        for name in ('user', 'doacoes', 'emprestimos', 'livro_caixa', 'documentos', 'relatorios', 'function'):
+        for name in ('user', 'doacoes', 'emprestimos', 'livro_caixa', 'documentos', 'relatorios', 'function', 'categorias'):
             mocks[name] = types.ModuleType(name)
         mocks['function'].preparar_tabela_pendencias = lambda: None
         with patch.dict(sys.modules, mocks), patch.object(Flask, 'run') as run, patch.object(Flask.config_class, 'from_pyfile'):

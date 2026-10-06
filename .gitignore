@@ -3,3 +3,4 @@ arquivos/doacoes/*
 !arquivos/doacoes/.gitkeep
 arquivos/emprestimos/*
 !arquivos/emprestimos/.gitkeep
+gemini.local.json
