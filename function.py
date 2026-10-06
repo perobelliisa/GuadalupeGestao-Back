@@ -22,8 +22,27 @@ from werkzeug.utils import secure_filename
 from main import app, con
 
 
+import socket
+
+
+
 # Atribui a variável 'EXTENSOES_PERMITIDAS' o resultado da expressão '{'.pdf', '.jpg', '.jpeg', '.png'}'.
 EXTENSOES_PERMITIDAS = {'.pdf', '.jpg', '.jpeg', '.png'}
+
+
+
+def pegar_dispositivo():
+    nome_maquina = socket.gethostname()
+
+    try:
+        ip_maquina = socket.gethostbyname(nome_maquina)
+    except socket.error:
+        ip_maquina = "IP não identificado"
+
+    return {
+        "nome": nome_maquina,
+        "ip": ip_maquina
+    }
 
 
 # Define a função dados_requisicao, que obtém os dados enviados em JSON ou formulário.
@@ -734,12 +753,14 @@ def obter_categoria_lancamento(dados, cur, tipo):
         # Retorna categoria[0], None.
         return categoria[0], None
 
+    dispositivo = pegar_dispositivo()
+
     # Inicia a execução da consulta ou comando SQL no banco de dados.
     cur.execute('''
-        INSERT INTO CATEGORIA (NOME, STATUS, TIPO, DESCRICAO) -- Inicia a inclusão de um novo registro.
-        VALUES (?, 0, ?, ?) -- Define os valores que serão gravados.
+        INSERT INTO CATEGORIA (NOME, STATUS, TIPO, DESCRICAO, ID_USUARIO, DISPOSITIVO) -- Inicia a inclusão de um novo registro.
+        VALUES (?, 0, ?, ?, ?, ?) -- Define os valores que serão gravados.
         RETURNING ID_CATEGORIA -- Solicita ao banco o identificador gerado.
-    ''', (nome, tipo, 'Categoria criada pelo cadastro de movimentação.'))  # Fecha a string SQL usada pela consulta.
+    ''', (nome, tipo, 'Categoria criada pelo cadastro de movimentação.', ID_USUARIO,  dispositivo))  # Fecha a string SQL usada pela consulta.
     # Retorna cur.fetchone()[0], None.
     return cur.fetchone()[0], None
 

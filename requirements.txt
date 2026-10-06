@@ -4,3 +4,4 @@ PyJWT
 fdb
 Flask-Cors
 ReportLab
+Pillow

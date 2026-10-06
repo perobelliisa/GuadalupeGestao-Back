@@ -1,3 +1,9 @@
+import sys
+
+# Compartilha o modulo ao executar main.py diretamente e evita imports duplicados.
+if __name__ == '__main__':
+    sys.modules['main'] = sys.modules[__name__]
+
 # Importa Flask, send_from_directory do módulo flask para uso neste arquivo.
 from flask import Flask, send_from_directory
 # Importa o módulo fdb para disponibilizar seus recursos.
@@ -68,6 +74,9 @@ preparar_tabela_pendencias()
 
 
 # Verifica se __name__ == '__main__'.
+from api_docs import registrar_documentacao
+registrar_documentacao(app)
+
 if __name__ == '__main__':
     # Inicia o servidor Flask na interface e porta configuradas.
     app.run(host='0.0.0.0', port=5000)

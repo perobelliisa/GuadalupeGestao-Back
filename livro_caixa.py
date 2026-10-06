@@ -582,10 +582,41 @@ def pagar_pendencia(tipo, identificador):
 
 
 """Rota a acrescentar a livro_caixa.py no backend."""
-from function import salvar_anexo, localizar_anexo
+from function import salvar_anexo, localizar_anexo, EXTENSOES_PERMITIDAS
+import os
+import tempfile
+from werkzeug.utils import secure_filename
+
+trava_comprovantes = RLock()
 
 
-@app.route('/livro-caixa/<int:id_lancamento>/anexo', methods=['POST'])
+def substituir_comprovante(arquivo, id_lancamento):
+    if not arquivo or not arquivo.filename:
+        return None
+    extensao = os.path.splitext(secure_filename(arquivo.filename))[1].lower()
+    if extensao not in EXTENSOES_PERMITIDAS:
+        raise ValueError('Envie um arquivo PDF, JPG ou PNG.')
+    pasta = os.path.join(app.config['UPLOAD_FOLDER'], 'movimentacoes')
+    os.makedirs(pasta, exist_ok=True)
+    nome = f'movimentacao_{id_lancamento}{extensao}'
+    # Mantém o comprovante anterior se o envio do novo arquivo falhar.
+    descritor, temporario = tempfile.mkstemp(dir=pasta)
+    os.close(descritor)
+    try:
+        arquivo.save(temporario)
+        os.replace(temporario, os.path.join(pasta, nome))
+        for outra in EXTENSOES_PERMITIDAS - {extensao}:
+            antigo = os.path.join(pasta, f'movimentacao_{id_lancamento}{outra}')
+            if os.path.isfile(antigo):
+                os.remove(antigo)
+    finally:
+        if os.path.isfile(temporario):
+            os.remove(temporario)
+    return f'/arquivos/movimentacoes/{nome}'
+
+
+
+@app.route('/livro-caixa/<int:id_lancamento>/anexo', methods=['POST', 'PUT'])
 def salvar_comprovante_lancamento(id_lancamento):
     if not usuario_pode_gerenciar_doacoes():
         return jsonify({'sucesso': False, 'mensagem': 'Acesso não autorizado'}), 403
@@ -594,9 +625,13 @@ def salvar_comprovante_lancamento(id_lancamento):
     try:
         if tipo_lancamento(id_lancamento, cur) is None:
             return jsonify({'sucesso': False, 'mensagem': 'Lançamento não encontrado.'}), 404
-        if localizar_anexo('movimentacoes', 'movimentacao', id_lancamento):
-            return jsonify({'sucesso': False, 'mensagem': 'Este lançamento já tem comprovante. Atualize a lista.'}), 409
-        anexo = salvar_anexo(request.files.get('anexo'), 'movimentacoes', 'movimentacao', id_lancamento)
+        with trava_comprovantes:
+            if request.method == 'POST' and localizar_anexo('movimentacoes', 'movimentacao', id_lancamento):
+                return jsonify({'sucesso': False, 'mensagem': 'Este lançamento já tem comprovante. Atualize a lista.'}), 409
+            if request.method == 'PUT':
+                anexo = substituir_comprovante(request.files.get('anexo'), id_lancamento)
+            else:
+                anexo = salvar_anexo(request.files.get('anexo'), 'movimentacoes', 'movimentacao', id_lancamento)
         if not anexo:
             return jsonify({'sucesso': False, 'mensagem': 'Selecione um comprovante para enviar.'}), 400
         return jsonify({'sucesso': True, 'anexo': anexo}), 200
@@ -607,3 +642,20 @@ def salvar_comprovante_lancamento(id_lancamento):
         return jsonify({'sucesso': False, 'mensagem': 'Não foi possível salvar o comprovante.'}), 500
     finally:
         cur.close()
+
+
+@app.route('/comprovantes/ler', methods=['POST'])
+def ler_dados_comprovante():
+    if not usuario_pode_gerenciar_doacoes():
+        return jsonify({'sucesso': False, 'mensagem': 'Acesso não autorizado'}), 403
+    try:
+        from leitura_comprovante import ler_comprovante
+        dados = ler_comprovante(request.files.get('anexo'))
+        return jsonify({'sucesso': True, 'dados': dados}), 200
+    except ValueError as erro:
+        return jsonify({'sucesso': False, 'mensagem': str(erro)}), 400
+    except RuntimeError as erro:
+        return jsonify({'sucesso': False, 'mensagem': str(erro)}), getattr(erro, 'status', 503)
+    except Exception:
+        app.logger.exception('Erro na leitura do comprovante')
+        return jsonify({'sucesso': False, 'mensagem': 'Não foi possível ler o comprovante. Tente outra foto.'}), 500
