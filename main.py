@@ -75,6 +75,13 @@ preparar_tabela_pendencias()
 
 
 # Verifica se __name__ == '__main__'.
+from arkhe import preparar_tabela as preparar_tabela_arkhe, registrar_arkhe
+from function import abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao
+from contextlib import closing
+with closing(abrir_conexao()) as conexao_arkhe:
+    preparar_tabela_arkhe(conexao_arkhe)
+registrar_arkhe(app, abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao)
+
 from api_docs import registrar_documentacao
 registrar_documentacao(app)
 

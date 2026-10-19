@@ -20,3 +20,29 @@ O navegador precisa de internet para carregar os recursos do Swagger UI via CDN.
 
 A interface usa a integração standalone descrita na
 [documentação oficial do Swagger UI](https://swagger.io/docs/open-source-tools/swagger-ui/usage/installation/).
+
+
+## Integração Arkhé
+
+As credenciais ficam somente neste backend. Configure `ARKHE_API_URL`, `ARKHE_CLIENT_ID`
+e `ARKHE_CLIENT_SECRET` no ambiente, ou copie `arkhe.local.example.json` para
+`arkhe.local.json` (ignorado pelo Git) e preencha localmente. Reinicie o servidor.
+Não use variáveis VITE para segredos. Cada conjunto de credenciais tem seu próprio histórico.
+
+Ao iniciar, é criada a tabela Firebird `ARKHE_COBRANCA` se ainda não existir.
+Rotas protegidas pelas permissões existentes de doações (tipos 0 e 1):
+
+- `GET /integracoes/arkhe/conta`: validação da conta, apenas dados públicos.
+- `GET /integracoes/arkhe/cobrancas`: histórico persistente da integração.
+- `POST /integracoes/arkhe/cobrancas`: JSON com `id` UUID gerado pelo cliente,
+  `doador`, `valor`, `id_projeto` opcional e `descricao` opcional.
+- `POST /integracoes/arkhe/cobrancas/<uuid>/consultar`: consulta a Arkhé e,
+  quando paga, registra doação e entrada na mesma transação, uma única vez.
+
+Repetir o UUID de criação nunca repete o POST bancário. Se a resposta bancária se
+perder, a solicitação fica para conferência manual; não há repetição automática.
+A data contábil é a data da confirmação no Guadalupe (UTC-3), pois a consulta
+documentada não informa a data do pagamento. O código recebido é interno da Arkhé.
+Não há endpoint externo documentado para executar pagamentos de despesas.
+
+Teste sem banco ou conta reais: `python -B -m unittest discover -s tests -p test_arkhe.py -v`.
