@@ -650,7 +650,14 @@ def ler_dados_comprovante():
         return jsonify({'sucesso': False, 'mensagem': 'Acesso não autorizado'}), 403
     try:
         from leitura_comprovante import ler_comprovante
-        dados = ler_comprovante(request.files.get('anexo'))
+        import json
+        opcoes_texto = request.form.get('opcoes', '')
+        if len(opcoes_texto) > 200000:
+            raise ValueError('As opcoes do comprovante sao muito grandes.')
+        opcoes = json.loads(opcoes_texto) if opcoes_texto else None
+        if opcoes is not None and not isinstance(opcoes, dict):
+            raise ValueError('As opcoes do comprovante sao invalidas.')
+        dados = ler_comprovante(request.files.get('anexo'), opcoes) if opcoes else ler_comprovante(request.files.get('anexo'))
         return jsonify({'sucesso': True, 'dados': dados}), 200
     except ValueError as erro:
         return jsonify({'sucesso': False, 'mensagem': str(erro)}), 400

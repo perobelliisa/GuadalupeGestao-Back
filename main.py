@@ -82,6 +82,9 @@ with closing(abrir_conexao()) as conexao_arkhe:
     preparar_tabela_arkhe(conexao_arkhe)
 registrar_arkhe(app, abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao)
 
+from lupe import registrar_lupe
+registrar_lupe(app, usuario_pode_gerenciar_doacoes)
+
 from api_docs import registrar_documentacao
 registrar_documentacao(app)
 
