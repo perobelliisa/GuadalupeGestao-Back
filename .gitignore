@@ -5,3 +5,4 @@ arquivos/emprestimos/*
 !arquivos/emprestimos/.gitkeep
 gemini.local.json
 arkhe.local.json
+dados/lupe.sqlite3*

@@ -76,18 +76,31 @@ preparar_tabela_pendencias()
 
 # Verifica se __name__ == '__main__'.
 from arkhe import preparar_tabela as preparar_tabela_arkhe, registrar_arkhe
-from function import abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao
+from function import abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao, id_usuario_logado
+from lupe_recebimentos import RecebimentosLupe
 from contextlib import closing
 with closing(abrir_conexao()) as conexao_arkhe:
     preparar_tabela_arkhe(conexao_arkhe)
-registrar_arkhe(app, abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao)
+def acompanhar_cobranca_arkhe(cobranca):
+    usuario = id_usuario_logado()
+    if usuario:
+        try:
+            recebimentos_lupe.acompanhar(usuario, cobranca['id'])
+        except Exception:
+            app.logger.warning('Não foi possível ativar o aviso de recebimento; será recuperado ao consultar as cobranças.')
+
+consultar_recebimento_arkhe = registrar_arkhe(app, abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao, acompanhar=acompanhar_cobranca_arkhe)
+recebimentos_lupe = RecebimentosLupe(consultar_recebimento_arkhe, logger=app.logger)
 
 from lupe import registrar_lupe
-registrar_lupe(app, usuario_pode_gerenciar_doacoes)
+registrar_lupe(app, usuario_pode_gerenciar_doacoes, id_usuario_logado)
+from historico_lupe import registrar_historico_lupe
+registrar_historico_lupe(app, usuario_pode_gerenciar_doacoes, id_usuario_logado)
 
 from api_docs import registrar_documentacao
 registrar_documentacao(app)
 
 if __name__ == '__main__':
+    recebimentos_lupe.iniciar()
     # Inicia o servidor Flask na interface e porta configuradas.
     app.run(host='0.0.0.0', port=5000)

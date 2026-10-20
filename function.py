@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 # Importa o módulo jwt para disponibilizar seus recursos.
 import jwt
 # Importa request do módulo flask para uso neste arquivo.
-from flask import request
+from flask import request, has_request_context
 # Importa secure_filename do módulo werkzeug.utils para uso neste arquivo.
 from werkzeug.utils import secure_filename
 
@@ -1024,7 +1024,8 @@ def inserir_lancamento(cur, lancamento, tipo):
           lancamento['origem'], lancamento['forma_pagamento'], lancamento['observacao']))
     # Retorna cur.fetchone()[0].
     id_lancamento = cur.fetchone()[0]
-    salvar_anexo(request.files.get('anexo'), 'movimentacoes', 'movimentacao', id_lancamento)
+    if has_request_context():
+        salvar_anexo(request.files.get('anexo'), 'movimentacoes', 'movimentacao', id_lancamento)
     return id_lancamento
 
 

@@ -56,7 +56,7 @@ class ArkheTest(unittest.TestCase):
                 CREATE TABLE ARKHE_COBRANCA (ID TEXT PRIMARY KEY, INTEGRACAO TEXT, ID_EXTERNO INTEGER UNIQUE,
                     DOADOR TEXT, VALOR NUMERIC, ID_PROJETO INTEGER, DESCRICAO TEXT, CODIGO TEXT,
                     SITUACAO TEXT, ID_DOACAO INTEGER UNIQUE, CRIADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PAGO_EM TIMESTAMP,
-                    VALOR_LIVRE INTEGER NOT NULL DEFAULT 0);
+                    VALOR_LIVRE INTEGER NOT NULL DEFAULT 0, ERRO TEXT);
             ''')
         self.banco = BancoFalso()
         self.permitido = True
@@ -116,6 +116,7 @@ class ArkheTest(unittest.TestCase):
         self.banco.erro = ErroArkhe('Credenciais inválidas', definitivo=True)
         self.criar()
         self.assertEqual(self.criar().json['cobranca']['situacao'], 'falhou')
+        self.assertEqual(self.criar().json['cobranca']['motivo'], 'Credenciais inválidas')
 
     def test_valor_divergente_nao_lanca(self):
         self.criar()
@@ -249,6 +250,67 @@ class ArkheTest(unittest.TestCase):
                 cliente.chamar('/api/v1/conta')
             handler = opener.call_args.args[0]()
             self.assertIsNone(handler.redirect_request(None, None, None, None, None, 'https://outro.example'))
+
+    def test_motivo_do_provedor_e_preservado_sem_credenciais(self):
+        cliente = ClienteArkhe({'url':'https://banco.example','client_id':'id-teste','client_secret':'segredo-teste'})
+        for status in (400,422):
+            corpo = json.dumps({'mensagem':'Valor livre não permitido. segredo-teste'}).encode()
+            erro = HTTPError('https://banco.example',status,'erro',{},io.BytesIO(corpo))
+            with patch('urllib.request.build_opener') as opener:
+                opener.return_value.open.side_effect = erro
+                with self.assertRaises(ErroArkhe) as resultado: cliente.chamar('/api/v1/cobrancas/pix/qrcode', {'valor_livre':True})
+            self.assertIn('Valor livre não permitido',str(resultado.exception))
+            self.assertNotIn('segredo-teste',str(resultado.exception))
+            self.assertTrue(resultado.exception.definitivo)
+
+    def test_recuperacao_de_falha_nao_repete_criacao_e_preserva_motivo(self):
+        self.banco.erro = ErroArkhe('Arkhé: integração sem permissão.',422,True)
+        self.criar()
+        recuperada = self.criar()
+        self.assertEqual(recuperada.json['cobranca']['motivo'],'Arkhé: integração sem permissão.')
+        self.assertEqual(len(self.banco.chamadas),1)
+
+    def test_status_somente_consulta_nao_registra_recebimento(self):
+        self.criar()
+        self.banco.pago = True
+        resposta = self.client.get(f"/integracoes/arkhe/cobrancas/{self.payload['id']}/status")
+        self.assertEqual(resposta.status_code,200)
+        self.assertEqual(resposta.json['cobranca']['situacao'],'pago')
+        self.assertEqual(resposta.json['situacao_registrada'],'pendente')
+        self.assertFalse(resposta.json['recebimento_registrado'])
+        self.assertEqual(self.contagens(),(0,0))
+        local = self.client.get('/integracoes/arkhe/cobrancas').json['cobrancas'][0]
+        self.assertEqual(local['situacao'],'pendente')
+        self.assertEqual(self.consultar().status_code,200)
+        self.assertEqual(self.contagens(),(1,1))
+
+    def test_status_respeita_permissoes_e_integracao(self):
+        self.criar()
+        url = f"/integracoes/arkhe/cobrancas/{self.payload['id']}/status"
+        self.permitido = False
+        chamadas = len(self.banco.chamadas)
+        self.assertEqual(self.client.get(url).status_code,403)
+        self.assertEqual(len(self.banco.chamadas),chamadas)
+        self.permitido = True
+        self.banco.integracao = 'outra'
+        self.assertEqual(self.client.get(url).status_code,404)
+        self.assertEqual(self.contagens(),(0,0))
+
+    def test_status_recusa_dados_bancarios_inconsistentes(self):
+        self.criar()
+        self.banco.pago = True
+        self.banco.valor = 99
+        resposta = self.client.get(f"/integracoes/arkhe/cobrancas/{self.payload['id']}/status")
+        self.assertEqual(resposta.status_code,502)
+        self.assertEqual(self.contagens(),(0,0))
+
+    def test_status_de_valor_livre_retorna_quantia_recebida_sem_lancar(self):
+        self.criar({**self.payload,'valor':None,'valor_livre':True})
+        self.banco.pago = True
+        self.banco.valor = 77.5
+        resposta = self.client.get(f"/integracoes/arkhe/cobrancas/{self.payload['id']}/status")
+        self.assertEqual(resposta.json['cobranca']['valor'],77.5)
+        self.assertEqual(self.contagens(),(0,0))
 
 
 if __name__ == '__main__':

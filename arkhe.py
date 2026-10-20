@@ -67,8 +67,22 @@ class ClienteArkhe:
                          401: 'As credenciais da Arkhé são inválidas.',
                          403: 'A integração Arkhé está desativada ou sem permissão.',
                          404: 'A cobrança não foi encontrada na Arkhé.'}
-            raise ErroArkhe(mensagens.get(erro.code, 'A Arkhé não concluiu a solicitação.'),
-                            502, erro.code in (400, 401, 403, 404)) from None
+            mensagem = mensagens.get(erro.code, 'A Arkhé não concluiu a solicitação.')
+            if erro.code in (400, 422):
+                try:
+                    corpo = json.loads(erro.read(8192))
+                    detalhe = next((corpo.get(k) for k in ('mensagem', 'message', 'detail') if isinstance(corpo.get(k), str)), '') if isinstance(corpo, dict) else ''
+                    detalhe = ' '.join(detalhe.split())
+                    for segredo in (config['client_id'], config['client_secret']):
+                        if segredo: detalhe = detalhe.replace(segredo, '[oculto]')
+                    if detalhe and len(detalhe) <= 250 and not any(k in detalhe.lower() for k in ('client_secret', 'authorization', 'password')):
+                        mensagem = 'Arkhé: ' + detalhe
+                except (ValueError, OSError, TypeError):
+                    pass
+            if erro.code == 404 and caminho == '/api/v1/cobrancas/pix/qrcode':
+                mensagem = 'O endpoint de geração de QR Code não está disponível na Arkhé. Confira a integração com o responsável pela API.'
+            definitivo = erro.code in (400, 401, 403, 404, 422)
+            raise ErroArkhe(mensagem, 422 if definitivo else 502, definitivo) from None
         except (URLError, OSError, ValueError):
             raise ErroArkhe('Não foi possível obter uma resposta válida da Arkhé. Consulte novamente mais tarde.') from None
 
@@ -92,6 +106,7 @@ def preparar_tabela(conexao):
                 CRIADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PAGO_EM TIMESTAMP,
                 VALOR_LIVRE SMALLINT DEFAULT 0 NOT NULL,
+                ERRO VARCHAR(300),
                 FOREIGN KEY (ID_PROJETO) REFERENCES PROJETO (ID_PROJETO),
                 FOREIGN KEY (ID_DOACAO) REFERENCES DOACAO (ID_DOACAO)
             )''')
@@ -100,6 +115,10 @@ def preparar_tabela(conexao):
         if not cur.fetchone():
             cur.execute('ALTER TABLE ARKHE_COBRANCA ADD VALOR_LIVRE SMALLINT DEFAULT 0 NOT NULL')
         conexao.commit()
+        cur.execute("SELECT RDB$FIELD_NAME FROM RDB$RELATION_FIELDS WHERE RDB$RELATION_NAME = 'ARKHE_COBRANCA' AND RDB$FIELD_NAME = 'ERRO'")
+        if not cur.fetchone():
+            cur.execute('ALTER TABLE ARKHE_COBRANCA ADD ERRO VARCHAR(300)')
+        conexao.commit()
     except Exception:
         conexao.rollback()
         raise
@@ -107,8 +126,8 @@ def preparar_tabela(conexao):
         cur.close()
 
 
-COLUNAS = 'ID, ID_EXTERNO, DOADOR, VALOR, ID_PROJETO, DESCRICAO, CODIGO, SITUACAO, ID_DOACAO, CRIADO_EM, PAGO_EM, VALOR_LIVRE'
-CHAVES = ['id', 'id_cobranca', 'doador', 'valor', 'id_projeto', 'descricao', 'codigo_pagamento', 'situacao', 'id_doacao', 'criado_em', 'pago_em', 'valor_livre']
+COLUNAS = 'ID, ID_EXTERNO, DOADOR, VALOR, ID_PROJETO, DESCRICAO, CODIGO, SITUACAO, ID_DOACAO, CRIADO_EM, PAGO_EM, VALOR_LIVRE, ERRO'
+CHAVES = ['id', 'id_cobranca', 'doador', 'valor', 'id_projeto', 'descricao', 'codigo_pagamento', 'situacao', 'id_doacao', 'criado_em', 'pago_em', 'valor_livre', 'motivo']
 
 
 def serializar(linha):
@@ -155,7 +174,7 @@ def validar_dados(dados):
     return identificador, doador, valor, projeto, descricao, livre
 
 
-def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente=None):
+def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente=None, acompanhar=None):
     cliente = cliente or ClienteArkhe(carregar_config(app.root_path))
 
     @contextmanager
@@ -207,6 +226,9 @@ def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente
         with transacao() as cur:
             cur.execute(f'SELECT {COLUNAS} FROM ARKHE_COBRANCA WHERE INTEGRACAO = ? ORDER BY CRIADO_EM DESC', (cliente.integracao,))
             cobrancas = [serializar(linha) for linha in cur.fetchall()]
+        if acompanhar:
+            for cobranca in cobrancas:
+                if cobranca['situacao'] == 'pendente': acompanhar(cobranca)
         return jsonify(sucesso=True, cobrancas=cobrancas)
 
     @app.post('/integracoes/arkhe/cobrancas')
@@ -242,28 +264,20 @@ def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente
                 raise ErroArkhe('O valor retornado pela Arkhé diverge da solicitação. Confira com o banco.')
         except ErroArkhe as erro:
             with transacao() as cur:
-                cur.execute('UPDATE ARKHE_COBRANCA SET SITUACAO = ? WHERE ID = ? AND INTEGRACAO = ?',
-                            ('falhou' if erro.definitivo else 'verificar', identificador, cliente.integracao))
+                cur.execute('UPDATE ARKHE_COBRANCA SET SITUACAO = ?, ERRO = ? WHERE ID = ? AND INTEGRACAO = ?',
+                            ('falhou' if erro.definitivo else 'verificar', str(erro)[:300], identificador, cliente.integracao))
             raise
         with transacao() as cur:
             cur.execute("UPDATE ARKHE_COBRANCA SET ID_EXTERNO = ?, CODIGO = ?, SITUACAO = 'pendente' WHERE ID = ? AND INTEGRACAO = ?",
                         (externo, codigo, identificador, cliente.integracao))
             cobranca = buscar(cur, identificador)
         # Mesmo se a criação informar status pago, a consulta autenticada confirma o recebimento.
+        if acompanhar: acompanhar(cobranca)
         return jsonify(sucesso=True, cobranca=cobranca), 201
 
-    @app.post('/integracoes/arkhe/cobrancas/<uuid:identificador>/consultar')
-    @protegida
-    def consultar_cobranca_arkhe(identificador):
-        identificador = str(identificador)
-        with transacao() as cur:
-            cobranca = buscar(cur, identificador)
-        if not cobranca:
-            return jsonify(sucesso=False, mensagem='Cobrança não encontrada.'), 404
-        if cobranca['situacao'] == 'pago':
-            return jsonify(sucesso=True, cobranca=cobranca)
+    def conferir_pagamento(cobranca):
         if not cobranca['id_cobranca']:
-            return jsonify(sucesso=False, mensagem='A criação não foi confirmada. Confira a cobrança com a Arkhé antes de gerar outra.'), 409
+            raise ErroArkhe('A criação não foi confirmada. Confira a cobrança com a Arkhé antes de gerar outra.', 409)
         resposta = cliente.chamar(f"/api/v1/cobrancas/pix/{cobranca['id_cobranca']}")
         try:
             valor_pago = quantia(resposta.get('valor')) if resposta.get('status') == 1 else None
@@ -275,8 +289,45 @@ def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente
             consistente = False
         if not consistente:
             raise ErroArkhe('A resposta da Arkhé não corresponde à cobrança solicitada.')
+        return resposta, valor_pago
+
+    @app.get('/integracoes/arkhe/cobrancas/<uuid:identificador>/status')
+    @protegida
+    def status_cobranca_arkhe(identificador):
+        # Consulta somente: não cria doação, lançamento nem altera a cobrança.
+        with transacao() as cur:
+            cobranca = buscar(cur, str(identificador))
+        if not cobranca:
+            return jsonify(sucesso=False, mensagem='Cobrança não encontrada.'), 404
+        situacao_registrada = cobranca['situacao']
+        if situacao_registrada != 'pago':
+            resposta, valor_pago = conferir_pagamento(cobranca)
+            cobranca = {**cobranca, 'situacao': 'pago' if resposta['status'] == 1 else 'pendente'}
+            if valor_pago is not None: cobranca['valor'] = float(valor_pago)
+        return jsonify(sucesso=True, cobranca=cobranca,
+                       situacao_registrada=situacao_registrada,
+                       recebimento_registrado=bool(cobranca['id_doacao']),
+                       fonte='registro_confirmado' if situacao_registrada == 'pago' else 'consulta_arkhe',
+                       consultado_em=datetime.now(timezone.utc).isoformat())
+
+    @app.post('/integracoes/arkhe/cobrancas/<uuid:identificador>/consultar')
+    @protegida
+    def consultar_cobranca_arkhe(identificador):
+        cobranca = consultar_recebimento(str(identificador))
+        if acompanhar: acompanhar(cobranca)
+        return jsonify(sucesso=True, cobranca=cobranca)
+
+    def consultar_recebimento(identificador):
+        identificador = str(identificador)
+        with transacao() as cur:
+            cobranca = buscar(cur, identificador)
+        if not cobranca:
+            raise ErroArkhe('Cobrança não encontrada.', 404, True)
+        if cobranca['situacao'] == 'pago':
+            return cobranca
+        resposta, valor_pago = conferir_pagamento(cobranca)
         if resposta['status'] == 0:
-            return jsonify(sucesso=True, cobranca=cobranca)
+            return cobranca
         with transacao() as cur:
             # Obtém trava de escrita antes de reler e lançar: confirmação e recibo são atômicos.
             cur.execute('UPDATE ARKHE_COBRANCA SET SITUACAO = SITUACAO WHERE ID = ? AND INTEGRACAO = ?',
@@ -294,4 +345,6 @@ def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente
                 cur.execute("UPDATE ARKHE_COBRANCA SET SITUACAO = 'pago', ID_DOACAO = ?, PAGO_EM = ?, VALOR = ? WHERE ID = ? AND INTEGRACAO = ?",
                             (id_doacao, agora, str(valor_pago), identificador, cliente.integracao))
             cobranca = buscar(cur, identificador)
-        return jsonify(sucesso=True, cobranca=cobranca)
+        return cobranca
+
+    return consultar_recebimento
