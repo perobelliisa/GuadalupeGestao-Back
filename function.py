@@ -1198,8 +1198,15 @@ def proxima_parcela(item):
 def abrir_conexao():
     # Uma transação por requisição evita interferência entre pagamentos simultâneos.
     # Usa UTF-8 na conexão para preservar acentos ao ler e gravar no Firebird.
-    return fdb.connect(host=app.config['DB_HOST'], database=app.config['DB_NAME'],
-                       user=app.config['DB_USER'], password=app.config['DB_PASSWORD'], charset='UTF8')
+    conexao = fdb.connect(host=app.config['DB_HOST'], database=app.config['DB_NAME'],
+                          user=app.config['DB_USER'], password=app.config['DB_PASSWORD'], charset='UTF8')
+    from auditoria_contexto import aplicar_contexto
+    try:
+        aplicar_contexto(conexao)
+    except Exception:
+        conexao.close()
+        raise
+    return conexao
 
 
 # Cria o controle de pagamentos somente quando a tabela ainda nao existe.
@@ -1284,3 +1291,4 @@ def carregar_pendencias(cur):
         item['prioridade'] = prioridade(item['dias'])
         item['chave'] = f"{item['tipo']}:{item['id']}:{item['vencimento']}"
     return sorted(pendencias, key=lambda item: (item['vencimento'], item['chave'])), invalidos
+
