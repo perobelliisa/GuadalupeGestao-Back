@@ -57,6 +57,7 @@ class WhatsAppLupe:
         self.acoes = agente.acoes
         self.banco = banco or HistoricoLupe()
         self.numero = numero_com_pais(os.environ.get('WHATSAPP_ALLOWED_NUMBER', NUMERO_PADRAO))
+        self.lid = (os.environ.get('WHATSAPP_ALLOWED_LID') or '').strip().lower()
         self.usuario = (os.environ.get('WHATSAPP_USER_ID') or '2').strip()
         self.url = (os.environ.get('WAHA_API_URL') or 'https://apps-guadalupe-waha.ucxocw.easypanel.host').rstrip('/')
         self.chave = os.environ.get('WAHA_API_KEY', '').strip()
@@ -298,7 +299,10 @@ class WhatsAppLupe:
         if isinstance(dados_internos, dict) and isinstance(dados_internos.get('key'), dict) and dados_internos['key'].get('fromMe') is True:
             return
         remetente = payload.get('from') or payload.get('chatId') or ''
-        if numero_com_pais(remetente) != self.numero:
+        if str(remetente).lower().endswith('@lid'):
+            if not self.lid or str(remetente).lower() != self.lid:
+                return
+        elif numero_com_pais(remetente) != self.numero:
             return
         chat_id = str(remetente)
         id_evento = evento.get('id') or payload.get('id')
