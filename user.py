@@ -7,6 +7,7 @@ from flask_bcrypt import check_password_hash, generate_password_hash
 from main import app, con
 # Inicia a importação de vários recursos do módulo function.
 from function import (
+    abrir_conexao,
     # Disponibiliza o recurso gerar_token para as funções deste módulo.
     gerar_token,
     # Disponibiliza o recurso id_usuario_logado para as funções deste módulo.
@@ -522,8 +523,9 @@ def cadastro():
 @app.route('/login', methods=['POST'])
 # Define a função login, que valida as credenciais e cria a sessão do usuário.
 def login():
-    # Abre um cursor do banco e o armazena em 'cur'.
-    cur = con.cursor()
+    # Abre uma conexão nova para cada login; a conexão global pode ter caído.
+    conexao_login = abrir_conexao()
+    cur = conexao_login.cursor()
     # Inicia um bloco protegido para capturar erros durante a operação.
     try:
         # Converte os dados recebidos na requisição para um dicionário manipulável.
@@ -598,3 +600,4 @@ def login():
     finally:
         # Fecha o cursor para liberar o recurso do banco.
         cur.close()
+        conexao_login.close()
