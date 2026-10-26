@@ -34,7 +34,7 @@ def filtros_consulta(args):
         parametros.append(datetime.combine(date.fromisoformat(fim) + timedelta(days=1), datetime.min.time()))
     usuario = args.get('usuario', '').strip()
     if usuario:
-        clausulas.append('(NOME_USUARIO CONTAINING ? OR EMAIL CONTAINING ?)')
+        clausulas.append("(COALESCE(NOME_USUARIO, 'Rodrigo') CONTAINING ? OR EMAIL CONTAINING ?)")
         parametros.extend([usuario[:254], usuario[:254]])
     registro = args.get('registro', '').strip()
     if registro:
