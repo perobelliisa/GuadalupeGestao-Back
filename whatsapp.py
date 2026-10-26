@@ -23,7 +23,7 @@ from lupe_acoes import ErroAcao, SistemaLupe
 NUMERO_PADRAO = '18981146999'
 SESSAO_PADRAO = 'default'
 MAX_TEXTO = 2000
-CONFIRMACAO = re.compile(r'^(CONFIRMAR|CANCELAR)\s+([0-9a-f-]{36})$', re.IGNORECASE)
+CONFIRMACAO = re.compile(r'^(CONFIRMAR|CANCELAR)(?:\s+([0-9a-f-]{36}))?$', re.IGNORECASE)
 
 
 def digitos(valor):
@@ -215,10 +215,20 @@ class WhatsAppLupe:
             previa.extend(f"{campo.get('campo')}: {campo.get('depois') or campo.get('antes')}"
                           for campo in acao.get('campos', []) if campo.get('depois') or campo.get('antes'))
             resposta += '\n\n' + '\n'.join(previa)
-            resposta += f"\n\nPara executar, responda: CONFIRMAR {acao['id']}\nPara desistir: CANCELAR {acao['id']}"
+            resposta += f"\n\nPara executar a proposta mais recente, responda: CONFIRMAR\nPara desistir: CANCELAR\nReferência: {acao['id']}"
         mensagens.append({'papel': 'lupe', 'texto': resposta[:8000]})
         self.salvar_mensagens(conversa_id, mensagens, conversa)
         return resposta
+
+    def identificar_acao_pendente(self, conversa_id):
+        # Uma resposta curta se aplica somente à proposta atual desta conversa.
+        pendentes = [acao for acao in self.acoes.listar(self.usuario, conversa_id)
+                     if acao['estado'] == 'preparada']
+        if not pendentes:
+            raise ErroAcao('Não há ação pendente para confirmar. Peça à Lupe para preparar uma nova proposta.', 409)
+        if len(pendentes) != 1:
+            raise ErroAcao('Há mais de uma ação pendente. Responda CONFIRMAR seguido da referência da proposta.', 409)
+        return pendentes[0]['id']
 
     def decidir_acao(self, conversa_id, decisao, identificador):
         acao, _ = self.acoes.obter(self.usuario, identificador)
@@ -323,7 +333,8 @@ class WhatsAppLupe:
         confirmacao = CONFIRMACAO.fullmatch(texto)
         try:
             if confirmacao:
-                resposta = self.decidir_acao(conversa_id, confirmacao.group(1).upper(), confirmacao.group(2))
+                identificador = confirmacao.group(2) or self.identificar_acao_pendente(conversa_id)
+                resposta = self.decidir_acao(conversa_id, confirmacao.group(1).upper(), identificador)
             else:
                 resposta = self.enviar_para_agente(conversa_id, texto)
             self.enviar(chat_id, resposta)
