@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+__pycache__
+**/__pycache__
+*.pyc
+.env
+.env.*
+*.FDB
+*.fdb
+*.sqlite3
+dados
+node_modules
+tests
