@@ -1,11 +1,12 @@
 import sys
+import os
 
 # Compartilha o modulo ao executar main.py diretamente e evita imports duplicados.
 if __name__ == '__main__':
     sys.modules['main'] = sys.modules[__name__]
 
 # Importa Flask, send_from_directory do módulo flask para uso neste arquivo.
-from flask import Flask, send_from_directory
+from flask import Flask, jsonify, send_from_directory
 # Importa o módulo fdb para disponibilizar seus recursos.
 import fdb
 # Importa CORS do módulo flask_cors para uso neste arquivo.
@@ -34,7 +35,7 @@ CORS(
     # Disponibiliza o recurso app para as funções deste módulo.
     app,
     # Atribui a variável 'origins' o resultado da expressão '["http://localhost:5173", "http://127.0.0.1:5173"],'.
-    origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    origins=app.config['CORS_ORIGINS'],
     # Atribui a variável 'supports_credentials' o resultado da expressão 'True'.
     supports_credentials=True
 # Fecha a chamada ou a lista de argumentos iniciada anteriormente.
@@ -45,20 +46,13 @@ CORS(
 @app.route('/arquivos/<path:nome_arquivo>')
 # Define a função servir_arquivo, que envia um arquivo existente na pasta de uploads.
 def servir_arquivo(nome_arquivo):
+    if not usuario_pode_gerenciar_doacoes():
+        return jsonify({'sucesso': False, 'mensagem': 'Acesso não autorizado'}), 403
     # Retorna send_from_directory(app.config['UPLOAD_FOLDER'], nome_arquivo).
     return send_from_directory(app.config['UPLOAD_FOLDER'], nome_arquivo)
 
-# Inicia um bloco protegido para capturar erros durante a operação.
-try:
-    # Abre a conexão com o banco de dados usando as credenciais configuradas.
-    # Informa a codificação para o Firebird converter corretamente textos acentuados.
-    con= fdb.connect(host= host, database=database, user=user, password=password, charset='UTF8')
-    # Exibe esta mensagem no console para informar o resultado da operação.
-    print('Banco conectado com sucesso!')
-# Captura o erro Exception as e e permite tratá-lo.
-except Exception as e:
-    # Exibe esta mensagem no console para informar o resultado da operação.
-    print('Erro de conexão com o banco de dados')
+con= fdb.connect(host= host, database=database, user=user, password=password, charset='UTF8')
+print('Banco conectado com sucesso!')
 
 # Importa * do módulo user para uso neste arquivo.
 from user import *
@@ -110,4 +104,5 @@ registrar_documentacao(app)
 if __name__ == '__main__':
     recebimentos_lupe.iniciar()
     # Inicia o servidor Flask na interface e porta configuradas.
-    app.run(host='0.0.0.0', port=5000)
+    from waitress import serve
+    serve(app, host='0.0.0.0', port=int(os.environ.get('PORT', '5000')), threads=1)
