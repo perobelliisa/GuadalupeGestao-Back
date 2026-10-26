@@ -120,6 +120,7 @@ def registrar_lupe(app, autorizado, identificar_usuario=None):
         from lupe_agente import AgenteLupe
         from lupe_acoes import registrar_acoes
         agente = AgenteLupe(app)
+        app.extensions['agente_lupe'] = agente
         registrar_acoes(app, autorizado, identificar_usuario, agente.acoes)
     @app.route('/lupe/chat', methods=['POST'])
     def chat_lupe():

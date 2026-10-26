@@ -119,7 +119,7 @@ def gerar_especificacao(app):
             }
             if parametros:
                 operacao['parameters'] = parametros
-            if regra.rule not in {'/login', '/arquivos/<path:nome_arquivo>'}:
+            if regra.rule not in {'/login', '/arquivos/<path:nome_arquivo>', '/webhooks/waha', '/tarefas/whatsapp/resumo-diario'}:
                 operacao['security'] = [{'BearerAuth': []}, {'CookieAuth': []}]
             if metodo in {'POST', 'PUT', 'PATCH'}:
                 conteudo = {}

@@ -5,3 +5,4 @@ fdb
 Flask-Cors
 ReportLab
 Pillow
+python-dotenv

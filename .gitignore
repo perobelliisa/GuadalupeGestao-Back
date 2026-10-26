@@ -6,3 +6,7 @@ arquivos/emprestimos/*
 gemini.local.json
 arkhe.local.json
 dados/lupe.sqlite3*
+.env`n.env.*`n!.env.example
+.env
+.env.*
+!.env.example

@@ -1,22 +1,19 @@
-# Este módulo define as configurações usadas pela aplicação, pelo banco e pelos uploads.
-# Importa o módulo os para disponibilizar seus recursos.
-import os
-# Atribui a variável 'SECRET_KEY' o resultado da expressão '"senha_muito_secreta"'.
-SECRET_KEY = "senha_muito_secreta"
-# Atribui a variável 'DEBUG' o resultado da expressão 'True'.
-DEBUG = True
-# Atribui a variável 'DB_HOST' o resultado da expressão ''localhost''.
-DB_HOST = 'localhost'
-# Atribui a variável 'DB_NAME' o resultado da expressão 'r'C:\Users\Guilherme kawanami\OneDrive\Documentos\GitHub\GuadalupeGestao-Back\BANCO.FDB''.
-DB_NAME = r'C:\Users\Aluno\Desktop\GuadalupeGestao-Back\BANCO.FDB'
+﻿import os
+from dotenv import load_dotenv
 
-# Atribui a variável 'DB_USER' o resultado da expressão ''SYSDBA''.
-DB_USER = 'SYSDBA'
-# Atribui a variável 'DB_PASSWORD' o resultado da expressão ''sysdba''.
-DB_PASSWORD = 'sysdba'
+# Lê o .env do diretório do backend quando a aplicação é iniciada.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
-# Atribui a variável 'UPLOAD_FOLDER' o resultado da expressão 'os.path.join(os.path.dirname(os.path.abspath(__file__)), 'arquivos')'.
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'arquivos')
-
-# Prazo da autenticacao em segundos, compartilhado pelo JWT e pelo cookie.
-AUTH_TOKEN_MAX_AGE = 5000 * 60
+SECRET_KEY = os.getenv('SECRET_KEY', 'senha_muito_secreta')
+DEBUG = os.getenv('DEBUG', 'true').strip().lower() in ('1', 'true', 'yes', 'on')
+DB_HOST = os.getenv('DB_HOST', 'localhost')
+DB_NAME = os.getenv(
+    'DB_NAME',
+    r'C:\Users\Guilherme kawanami\OneDrive\Documentos\GitHub\GuadalupeGestao-Back\BANCO.FDB',
+)
+DB_USER = os.getenv('DB_USER', 'SYSDBA')
+DB_PASSWORD = os.getenv('DB_PASSWORD', 'sysdba')
+UPLOAD_FOLDER = os.getenv(
+    'UPLOAD_FOLDER', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'arquivos')
+)
+AUTH_TOKEN_MAX_AGE = int(os.getenv('AUTH_TOKEN_MAX_AGE', str(5000 * 60)))

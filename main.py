@@ -94,6 +94,8 @@ recebimentos_lupe = RecebimentosLupe(consultar_recebimento_arkhe, logger=app.log
 
 from lupe import registrar_lupe
 registrar_lupe(app, usuario_pode_gerenciar_doacoes, id_usuario_logado)
+from whatsapp import registrar_whatsapp
+registrar_whatsapp(app)
 from historico_lupe import registrar_historico_lupe
 registrar_historico_lupe(app, usuario_pode_gerenciar_doacoes, id_usuario_logado)
 
