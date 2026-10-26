@@ -101,8 +101,15 @@ registrar_historico_lupe(app, usuario_pode_gerenciar_doacoes, id_usuario_logado)
 from api_docs import registrar_documentacao
 registrar_documentacao(app)
 
+from auditoria import registrar_auditoria
+from auditoria_contexto import registrar_contexto
+from function import usuario_e_administrador
+registrar_contexto(app, con, id_usuario_logado)
+registrar_auditoria(app, usuario_e_administrador)
+
 if __name__ == '__main__':
     recebimentos_lupe.iniciar()
     # Inicia o servidor Flask na interface e porta configuradas.
     from waitress import serve
     serve(app, host='0.0.0.0', port=int(os.environ.get('PORT', '5000')), threads=1)
+
