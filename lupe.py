@@ -1,4 +1,8 @@
-"""Chat da Lupe. A chave e a chamada ao Gemini permanecem no servidor."""
+"""Chat da Lupe. A chave e a chamada ao Gemini permanecem no servidor.
+
+Este arquivo recebe as mensagens, prepara o pedido ao Gemini e devolve a
+resposta. As ações no sistema são organizadas em lupe_agente.py.
+"""
 import json
 import os
 import re
@@ -9,6 +13,7 @@ from flask import jsonify, request
 from leitura_comprovante import configuracao_gemini
 
 
+# Regras e informações que orientam o jeito de responder da Lupe.
 INSTRUCOES_LUPE = """Voce e Lupe, a assistente de IA do aplicativo Guadalupe Gestao.
 Converse em portugues do Brasil, com acolhimento, clareza e respostas curtas.
 Apresente-se como Lupe quando apropriado. Voce pode conversar e esclarecer duvidas gerais.
@@ -37,12 +42,14 @@ Responda em texto simples, com paragrafos curtos e listas apenas quando ajudarem
 
 
 class ErroLupe(RuntimeError):
+    # Erro tratado que pode ser devolvido ao aplicativo com uma mensagem clara.
     def __init__(self, mensagem, status=503):
         super().__init__(mensagem)
         self.status = status
 
 
 def validar_mensagens(mensagens):
+    # Confere o formato, a ordem e o tamanho antes de enviar ao Gemini.
     if not isinstance(mensagens, list) or not 1 <= len(mensagens) <= 21 or len(mensagens) % 2 != 1:
         raise ValueError('Envie uma conversa válida para a Lupe.')
     validadas = []
@@ -61,6 +68,7 @@ def validar_mensagens(mensagens):
 
 
 def consultar_modelo(conteudo, ferramentas=None, instrucoes=INSTRUCOES_LUPE, timeout=45):
+    # Envia conversa e regras ao Gemini e devolve a resposta do modelo.
     try:
         chave, modelo = configuracao_gemini()
     except (RuntimeError, ValueError, OSError):
@@ -107,6 +115,7 @@ def consultar_modelo(conteudo, ferramentas=None, instrucoes=INSTRUCOES_LUPE, tim
 
 
 def responder_lupe(mensagens):
+    # Gera uma resposta simples quando não há ferramentas de sistema envolvidas.
     conteudo = consultar_modelo(validar_mensagens(mensagens))
     texto = '\n'.join(parte['text'] for parte in conteudo['parts'] if isinstance(parte, dict) and isinstance(parte.get('text'), str) and not parte.get('thought')).strip()
     if not texto or len(texto) > 8000:
@@ -115,6 +124,7 @@ def responder_lupe(mensagens):
 
 
 def registrar_lupe(app, autorizado, identificar_usuario=None):
+    # Cria o agente e registra a rota HTTP que recebe mensagens da Lupe.
     agente = None
     if identificar_usuario:
         from lupe_agente import AgenteLupe
@@ -124,6 +134,7 @@ def registrar_lupe(app, autorizado, identificar_usuario=None):
         registrar_acoes(app, autorizado, identificar_usuario, agente.acoes)
     @app.route('/lupe/chat', methods=['POST'])
     def chat_lupe():
+        # Confere o acesso e encaminha a conversa ao agente.
         if not autorizado():
             return jsonify(sucesso=False, mensagem='Acesso não autorizado.'), 403
         if request.content_length and request.content_length > 256000:

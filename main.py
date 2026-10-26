@@ -75,6 +75,8 @@ preparar_tabela_pendencias()
 
 
 # Verifica se __name__ == '__main__'.
+# A integração fica no arkhe.py. Aqui o aplicativo prepara a tabela necessária
+# e entrega à integração o acesso ao banco, as permissões e o registro financeiro.
 from arkhe import preparar_tabela as preparar_tabela_arkhe, registrar_arkhe
 from function import abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao, id_usuario_logado
 from lupe_recebimentos import RecebimentosLupe
@@ -89,9 +91,11 @@ def acompanhar_cobranca_arkhe(cobranca):
         except Exception:
             app.logger.warning('Não foi possível ativar o aviso de recebimento; será recuperado ao consultar as cobranças.')
 
+# Registra no Flask as rotas que criam e consultam cobranças da Arkhé.
 consultar_recebimento_arkhe = registrar_arkhe(app, abrir_conexao, usuario_pode_gerenciar_doacoes, sincronizar_entrada_doacao, acompanhar=acompanhar_cobranca_arkhe)
 recebimentos_lupe = RecebimentosLupe(consultar_recebimento_arkhe, logger=app.logger)
 
+# Liga o agente de IA e registra o endpoint /lupe/chat no backend.
 from lupe import registrar_lupe
 registrar_lupe(app, usuario_pode_gerenciar_doacoes, id_usuario_logado)
 from whatsapp import registrar_whatsapp

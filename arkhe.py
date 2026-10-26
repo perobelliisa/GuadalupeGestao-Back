@@ -1,4 +1,9 @@
-"""Integração servidor a servidor. Não inicia o Flask nem abre o banco ao importar."""
+"""Integração servidor a servidor. Não inicia o Flask nem abre o banco ao importar.
+
+Em palavras simples: este arquivo é o mensageiro entre o Guadalupe e a Arkhé.
+O Guadalupe envia pedidos por HTTPS, recebe as respostas e guarda no Firebird
+o histórico das cobranças para saber o que já foi criado ou pago.
+"""
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -23,6 +28,8 @@ class ErroArkhe(Exception):
 
 
 def carregar_config(pasta):
+    # Primeiro procura os dados de acesso no ambiente do servidor. O arquivo
+    # local é uma alternativa para desenvolvimento; senhas não ficam no código.
     caminho = Path(pasta) / 'arkhe.local.json'
     local = json.loads(caminho.read_text(encoding='utf-8-sig')) if caminho.exists() else {}
     return {
@@ -38,6 +45,8 @@ class ClienteArkhe:
         self.integracao = sha256(config['client_id'].encode()).hexdigest()
 
     def chamar(self, caminho, dados=None):
+        # Todas as conversas com a API passam por aqui. Assim usamos sempre a
+        # mesma URL segura, enviamos as credenciais e tratamos erros da Arkhé.
         config = self.config
         if not config['client_id'] or not config['client_secret']:
             raise ErroArkhe('A integração Arkhé ainda não foi configurada no servidor.', 503, True)
@@ -88,6 +97,7 @@ class ClienteArkhe:
 
 
 def preparar_tabela(conexao):
+    # Cria no Firebird uma tabela para guardar cada cobrança Pix e seu estado.
     cur = conexao.cursor()
     try:
         cur.execute("SELECT RDB$RELATION_NAME FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = 'ARKHE_COBRANCA'")
@@ -175,6 +185,9 @@ def validar_dados(dados):
 
 
 def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente=None, acompanhar=None):
+    # Registra as rotas HTTP que o restante do sistema usa para falar com a
+    # Arkhé. Também recebe funções do Guadalupe para validar acesso e gravar
+    # uma doação quando o pagamento for confirmado.
     cliente = cliente or ClienteArkhe(carregar_config(app.root_path))
 
     @contextmanager
@@ -216,6 +229,8 @@ def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente
     @app.get('/integracoes/arkhe/conta')
     @protegida
     def conta_arkhe():
+        # Busca na Arkhé qual conta vai receber o dinheiro. Mostramos apenas
+        # os dados necessários para a pessoa conferir o destinatário.
         conta = cliente.chamar('/api/v1/conta')
         # Expõe somente os dados públicos necessários para confirmar a conta vinculada.
         return jsonify(sucesso=True, conta={k: conta.get(k) for k in ('id_conta', 'nome', 'banco')})
@@ -234,6 +249,8 @@ def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente
     @app.post('/integracoes/arkhe/cobrancas')
     @protegida
     def criar_cobranca_arkhe():
+        # Recebe um pedido de cobrança, confere os dados e salva uma reserva
+        # antes de chamar a Arkhé. Isso ajuda a não criar duas cobranças iguais.
         identificador, doador, valor, projeto, descricao, livre = validar_dados(request.get_json(silent=True))
         with transacao() as cur:
             existente = buscar(cur, identificador)
@@ -276,6 +293,7 @@ def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente
         return jsonify(sucesso=True, cobranca=cobranca), 201
 
     def conferir_pagamento(cobranca):
+        # Pergunta à Arkhé se a cobrança está pendente ou se já foi paga.
         if not cobranca['id_cobranca']:
             raise ErroArkhe('A criação não foi confirmada. Confira a cobrança com a Arkhé antes de gerar outra.', 409)
         resposta = cliente.chamar(f"/api/v1/cobrancas/pix/{cobranca['id_cobranca']}")
@@ -318,6 +336,9 @@ def registrar_arkhe(app, abrir_conexao, autorizado, sincronizar_entrada, cliente
         return jsonify(sucesso=True, cobranca=cobranca)
 
     def consultar_recebimento(identificador):
+        # Quando a Arkhé confirma o pagamento, registra a doação e a entrada
+        # financeira no mesmo processo. Se já existe uma doação ligada a essa
+        # cobrança, não cria outra.
         identificador = str(identificador)
         with transacao() as cur:
             cobranca = buscar(cur, identificador)

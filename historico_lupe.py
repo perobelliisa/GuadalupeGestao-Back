@@ -54,12 +54,14 @@ def metadados(conversa):
     return {**{campo: conversa[campo] for campo in ('id', 'titulo', 'resumo', 'atualizadaEm', 'quantidadeMensagens', 'revisao')}, 'revisaoAvisos': conversa.get('revisaoAvisos', 0)}
 
 
+# Guarda conversas e avisos da Lupe em SQLite, separados por usuário.
 class HistoricoLupe:
     def __init__(self, caminho=None):
         self.caminho = Path(caminho or os.environ.get('LUPE_DB_PATH') or Path(__file__).with_name('dados') / 'lupe.sqlite3')
 
     @contextmanager
     def conexao(self):
+        # Abre ou prepara o banco SQLite onde o histórico fica salvo.
         self.caminho.parent.mkdir(parents=True, exist_ok=True)
         con = sqlite3.connect(self.caminho, timeout=10)
         try:
@@ -78,11 +80,13 @@ class HistoricoLupe:
             con.close()
 
     def listar(self, usuario):
+        # Lista as conversas pertencentes a uma pessoa.
         with self.conexao() as con:
             linhas = con.execute('SELECT conteudo FROM lupe_conversas WHERE usuario=? ORDER BY atualizada_em DESC', (str(usuario),)).fetchall()
             return [metadados(self.apresentar(con, usuario, json.loads(linha[0]))) for linha in linhas]
 
     def carregar(self, usuario, identificador):
+        # Busca uma conversa específica sem misturar usuários.
         validar_id(identificador)
         with self.conexao() as con:
             linha = con.execute('SELECT conteudo FROM lupe_conversas WHERE usuario=? AND id=?', (str(usuario), identificador)).fetchone()
@@ -92,6 +96,7 @@ class HistoricoLupe:
             raise ErroHistorico('Esta conversa não está mais disponível.', 404)
 
     def apresentar(self, con, usuario, conversa):
+        # Monta os dados da conversa no formato usado pelo aplicativo.
         # Oculta pares artificiais antigos somente quando correspondem à auditoria
         # da própria conta. Mensagens escritas livremente não são removidas.
         if not con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='lupe_acoes'").fetchone():
@@ -118,6 +123,7 @@ class HistoricoLupe:
         return self.com_avisos(con, usuario, conversa)
 
     def com_avisos(self, con, usuario, conversa):
+        # Inclui avisos de recebimento na conversa para a Lupe poder informá-los.
         if not con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='lupe_avisos_pagamento'").fetchone():
             return conversa
         linhas = con.execute('SELECT id,texto,apos_mensagem,criado_em FROM lupe_avisos_pagamento WHERE usuario=? AND conversa=? ORDER BY id', (str(usuario),conversa['id'])).fetchall()
@@ -128,6 +134,7 @@ class HistoricoLupe:
         return conversa
 
     def responder_acao(self, con, usuario, identificador, plano, texto):
+        # Registra na conversa o resultado de uma ação confirmada ou cancelada.
         linha = con.execute('SELECT conteudo FROM lupe_conversas WHERE usuario=? AND id=?', (str(usuario), identificador)).fetchone()
         if not linha:
             return
@@ -146,6 +153,7 @@ class HistoricoLupe:
         con.execute('UPDATE lupe_conversas SET conteudo=?,atualizada_em=?,revisao=? WHERE usuario=? AND id=?', (json.dumps(conversa, ensure_ascii=False), agora, conversa['revisao'], str(usuario), identificador))
 
     def salvar(self, usuario, identificador, dados):
+        # Cria ou atualiza o histórico de uma conversa.
         dados = validar_conversa(dados, identificador)
         with self.conexao() as con:
             con.execute('BEGIN IMMEDIATE')
@@ -174,6 +182,7 @@ class HistoricoLupe:
         return self.carregar(usuario, identificador)
 
     def excluir(self, usuario, identificador):
+        # Remove uma conversa e cancela propostas que ainda estavam pendentes.
         validar_id(identificador)
         with self.conexao() as con:
             con.execute('DELETE FROM lupe_conversas WHERE usuario=? AND id=?', (str(usuario), identificador))
@@ -185,6 +194,7 @@ class HistoricoLupe:
 
 
 def registrar_historico_lupe(app, autorizado, identificar_usuario, repositorio=None):
+    # Cria as rotas HTTP para listar, carregar, salvar e excluir conversas.
     repositorio = repositorio or HistoricoLupe()
 
     def proteger(funcao):

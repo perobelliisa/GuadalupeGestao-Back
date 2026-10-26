@@ -63,6 +63,7 @@ def inteiro(valor, nome='identificador'):
     return valor
 
 
+# Faz as ferramentas usarem as rotas e permissões que o Guadalupe já possui.
 class SistemaLupe:
     def __init__(self, app):
         self.app = app
@@ -70,6 +71,7 @@ class SistemaLupe:
         self.headers = {campo: request.headers[campo] for campo in ('Authorization', 'Cookie', 'User-Agent') if campo in request.headers}
 
     def chamar(self, caminho, metodo='GET', dados=None, formulario=False):
+        # Chama uma rota interna com a autenticação da pessoa que está logada.
         opcoes = {'headers': self.headers, 'method': metodo}
         if dados is not None:
             opcoes['data' if formulario else 'json'] = dados
@@ -86,6 +88,7 @@ class SistemaLupe:
         return resultado
 
     def registros(self, recurso):
+        # Busca registros de um tipo, como despesas ou doações.
         if recurso not in RECURSOS:
             raise ErroAcao('Este recurso não está disponível para a Lupe.')
         rota, campo, _ = RECURSOS[recurso]
@@ -95,6 +98,7 @@ class SistemaLupe:
         return [{k: v for k, v in item.items() if k in LEITURA} for item in dados if isinstance(item, dict)]
 
     def registro(self, recurso, identificador):
+        # Localiza um registro específico pelo ID.
         inteiro(identificador)
         campo = RECURSOS[recurso][2]
         for item in self.registros(recurso):
@@ -103,6 +107,7 @@ class SistemaLupe:
         raise ErroAcao('O registro solicitado não está mais disponível.', 404)
 
     def consultar(self, argumentos):
+        # Filtra os registros e calcula totais para responder perguntas.
         if not isinstance(argumentos, dict):
             raise ErroAcao('Informe os filtros da consulta.')
         recurso = argumentos.get('recurso')
@@ -143,6 +148,7 @@ class SistemaLupe:
         return {'recurso': recurso, 'resumo_todos_filtrados': resumo, 'pagina': pagina, 'tem_mais': inicio+limite < len(registros), 'registros': registros[inicio:inicio+limite]}
 
     def preparar(self, argumentos):
+        # Confere os dados e monta uma proposta; ainda não grava nada.
         if not isinstance(argumentos, dict):
             raise ErroAcao('Informe os dados da ação.')
         operacao, recurso = argumentos.get('operacao'), argumentos.get('recurso')
@@ -273,6 +279,7 @@ class SistemaLupe:
         return {'operacao': operacao, 'recurso': recurso, 'id_registro': identificador, 'rota': rota, 'metodo': metodo, 'dados': corpo, 'snapshot': assinatura(atual) if atual else None, 'vencimento': argumentos.get('vencimento'), 'titulo': titulo, 'descricao': descricao, 'campos': campos, 'destrutiva': operacao == 'excluir'}
 
     def exibir(self, campo, valor, recurso):
+        # Troca IDs por nomes que a pessoa consiga entender.
         if campo == 'id_projeto' and recurso == 'doacao' and valor in (None, '', 0): return 'Missão Guadalupe'
         if valor is None or valor == '': return '—'
         if campo == 'forma_pagamento': return {0: 'Pix', 1: 'Crédito', 2: 'Débito', 3: 'Boleto', 4: 'Parcelamento', 5: 'Dinheiro'}.get(valor, str(valor))
@@ -290,6 +297,7 @@ class SistemaLupe:
         return str(valor)
 
     def conferir(self, plano):
+        # Verifica se o registro não mudou desde que a proposta foi mostrada.
         if not plano['snapshot']: return
         atual = self.registro(plano['recurso'], plano['id_registro'])
         if plano['operacao'] == 'registrar_pagamento' and plano['rota'].startswith('/pendencias/'):
@@ -299,6 +307,7 @@ class SistemaLupe:
             raise ErroAcao('Este registro mudou depois da proposta. Peça à Lupe para preparar a ação novamente.', 409)
 
     def executar(self, plano):
+        # Chama a rota que grava a alteração depois da confirmação.
         if plano['recurso'] == 'pix_doacao' and plano['operacao'] == 'gerar_pix':
             from lupe_pagamentos import executar_pix
             return executar_pix(self, plano)
@@ -309,6 +318,7 @@ class SistemaLupe:
         return f"{verbo} {artigo} {NOMES[plano['recurso']]} com sucesso."
 
 
+# Guarda propostas e confirmações para evitar ações sem aceite ou duplicadas.
 class AcoesLupe:
     def __init__(self, banco=None, relogio=time.time):
         self.banco = banco or HistoricoLupe()
@@ -316,6 +326,7 @@ class AcoesLupe:
 
     @contextmanager
     def conexao(self):
+        # Abre o SQLite do histórico e garante a tabela de ações.
         with self.banco.conexao() as con:
             con.execute('''CREATE TABLE IF NOT EXISTS lupe_acoes (
                 id TEXT PRIMARY KEY, usuario TEXT NOT NULL, conversa TEXT NOT NULL,
@@ -330,6 +341,7 @@ class AcoesLupe:
         return {'id': linha[0], 'conversa_id': linha[2], 'estado': estado, 'expira_em': datetime.fromtimestamp(linha[4], timezone.utc).isoformat(), 'titulo': plano['titulo'], 'descricao': plano['descricao'], 'campos': plano['campos'], 'destrutiva': plano['destrutiva'], 'resultado': linha[6]}
 
     def criar(self, usuario, conversa, plano):
+        # Salva uma proposta pendente com prazo para confirmação.
         validar_id(conversa)
         identificador = str(uuid4())
         with self.conexao() as con:
@@ -351,6 +363,7 @@ class AcoesLupe:
         return [self.publico(linha) for linha in reversed(linhas)]
 
     def decidir(self, usuario, identificador, confirmar, sistema):
+        # Marca a ação como confirmada ou cancelada e trata sua execução.
         with self.conexao() as con:
             con.execute('BEGIN IMMEDIATE')
             linha = con.execute('SELECT * FROM lupe_acoes WHERE usuario=? AND id=?', (str(usuario), identificador)).fetchone()
@@ -390,6 +403,7 @@ class AcoesLupe:
 
 
 def registrar_acoes(app, autorizado, identificar_usuario, acoes, sistema_factory=None):
+    # Registra as rotas para listar, confirmar e cancelar propostas da Lupe.
     sistema_factory = sistema_factory or (lambda: SistemaLupe(app))
     def proteger(funcao):
         @wraps(funcao)

@@ -1,4 +1,8 @@
-"""Consultas sem escrita e geração de códigos pela integração Arkhé existente."""
+"""Ações de pagamento que a Lupe pode oferecer usando o backend do Guadalupe.
+
+Em palavras simples: a Lupe entende o pedido e prepara uma cobrança. O código
+Pix de verdade vem da Arkhé; a Lupe só mostra o código que recebeu do backend.
+"""
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -11,6 +15,7 @@ CAMPOS_PIX = {'id', 'id_cobranca', 'doador', 'valor', 'valor_livre', 'id_projeto
 
 
 def cobrancas(sistema):
+    # Pede ao backend a lista de cobranças já registradas.
     itens = sistema.chamar(BASE + '/cobrancas').get('cobrancas')
     if not isinstance(itens, list):
         raise ErroAcao('Não consegui consultar os pagamentos da Arkhé.', 502)
@@ -18,6 +23,9 @@ def cobrancas(sistema):
 
 
 def consultar_pagamentos(sistema, argumentos):
+    # Consulta pagamentos e filtra por tipo, situação, busca ou período.
+    # A Lupe pede ao Guadalupe os pagamentos registrados. Se a pessoa solicitar
+    # uma atualização, o backend também consulta a Arkhé para conferir o estado.
     if not isinstance(argumentos, dict): raise ErroAcao('Informe qual pagamento deseja consultar.')
     tipo = argumentos.get('tipo')
     if tipo not in {'despesa', 'emprestimo', 'doacao_pix'}:
@@ -95,6 +103,7 @@ def consultar_pagamentos(sistema, argumentos):
 
 
 def conta_recebedora(sistema):
+    # Confere qual conta da Arkhé receberá a doação.
     conta = sistema.chamar(BASE + '/conta').get('conta')
     if not isinstance(conta, dict) or not conta.get('nome') or not conta.get('id_conta'):
         raise ErroAcao('Confira a conta de recebimento da Arkhé no sistema antes de gerar o código.', 422)
@@ -102,6 +111,8 @@ def conta_recebedora(sistema):
 
 
 def preparar_pix(sistema, argumentos):
+    # Antes de criar o Pix, a Lupe organiza os dados da doação e confere quem
+    # vai receber. Ela apresenta um resumo para a pessoa confirmar.
     permitidos = {'doador', 'valor', 'valor_livre', 'id_projeto', 'descricao'}
     if not isinstance(argumentos, dict) or set(argumentos) - permitidos:
         raise ErroAcao('Informe apenas os dados da doação. O recebedor vem da conta configurada no sistema.')
@@ -121,6 +132,8 @@ def preparar_pix(sistema, argumentos):
 
 
 def executar_pix(sistema, plano):
+    # Só roda depois da confirmação. A Lupe chama a rota do Guadalupe, e o
+    # Guadalupe conversa com a Arkhé e devolve o código Pix real.
     if assinatura(conta_recebedora(sistema)) != assinatura(plano['recebedor']):
         raise ErroAcao('A conta de recebimento mudou. Prepare uma nova confirmação antes de gerar o Pix.', 409)
     dados = sistema.chamar(BASE + '/cobrancas', 'POST', plano['dados'])
@@ -131,6 +144,7 @@ def executar_pix(sistema, plano):
 
 
 def texto_codigo(cobranca, gerado=False):
+    # Valida e formata o código recebido; não pede ao Gemini para inventá-lo.
     codigo = cobranca.get('codigo_pagamento')
     if not isinstance(codigo, str) or not 1 <= len(codigo) <= 2048 or any(ord(c) < 32 or ord(c) == 127 for c in codigo):
         raise ErroAcao('A criação não retornou um código válido. Confira as cobranças antes de solicitar outro.', 502)
