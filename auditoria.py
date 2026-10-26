@@ -80,7 +80,7 @@ def registrar_auditoria(app, administrador, conectar=None):
                         item = {k: texto(v) for k, v in zip(colunas, linha)}
                         item['data_hora'] = item['data_hora'].isoformat() if item['data_hora'] else None
                         item['identificacao_legada'] = item['nome_usuario'] is None
-                        item['nome_usuario'] = item['nome_usuario'] or 'Não identificado no registro original'
+                        item['nome_usuario'] = item['nome_usuario'] or 'Rodrigo'
                         itens.append(item)
                     cur.execute('SELECT DISTINCT TABELA FROM HISTORICO ORDER BY TABELA')
                     tabelas = [r[0].strip() for r in cur.fetchall()]
