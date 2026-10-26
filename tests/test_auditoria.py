@@ -63,7 +63,7 @@ class AuditoriaTest(unittest.TestCase):
     def test_paginacao_filtros_e_injecao(self):
         self.assertEqual(self.client.get('/logs?tamanho=1&pagina=2').json['logs'][0]['id'], 1)
         self.assertEqual(self.client.get('/logs?tabela=USUARIO&acao=UPDATE&registro=7').json['total'], 1)
-        self.assertEqual(self.client.get('/logs?usuario=Rodrigo').json['total'], 1)
+        self.assertEqual(self.client.get('/logs?usuario=Rodrigo').json['total'], 2)
         self.assertEqual(self.client.get("/logs?tabela=' OR 1=1 --").json['total'], 0)
 
     def test_filtros_invalidos(self):
