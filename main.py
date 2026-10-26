@@ -51,7 +51,8 @@ def servir_arquivo(nome_arquivo):
 # Inicia um bloco protegido para capturar erros durante a operação.
 try:
     # Abre a conexão com o banco de dados usando as credenciais configuradas.
-    con= fdb.connect(host= host, database=database, user=user, password=password)
+    # Informa a codificação para o Firebird converter corretamente textos acentuados.
+    con= fdb.connect(host= host, database=database, user=user, password=password, charset='UTF8')
     # Exibe esta mensagem no console para informar o resultado da operação.
     print('Banco conectado com sucesso!')
 # Captura o erro Exception as e e permite tratá-lo.
