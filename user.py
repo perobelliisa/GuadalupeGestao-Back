@@ -3,6 +3,7 @@ from flask import jsonify, make_response, request
 # Importa check_password_hash, generate_password_hash do módulo flask_bcrypt para uso neste arquivo.
 from flask_bcrypt import check_password_hash, generate_password_hash
 
+
 # Importa app, con do módulo main para uso neste arquivo.
 from main import app, con
 # Inicia a importação de vários recursos do módulo function.
@@ -19,8 +20,9 @@ from function import (
     # Disponibiliza o recurso usuario_pode_gerenciar_doacoes para as funções deste módulo.
     usuario_pode_gerenciar_doacoes,
     # Disponibiliza o recurso verificar_senha para as funções deste módulo.
-    verificar_senha
+    verificar_senha,
 # Fecha a chamada ou a lista de argumentos iniciada anteriormente.
+    pegar_dispositivo
 )
 
 
@@ -413,6 +415,10 @@ def cadastro():
     # Abre um cursor do banco e o armazena em 'cur'.
     cur = con.cursor()
     # Inicia um bloco protegido para capturar erros durante a operação.
+
+    
+     = pegar_dispositivo()["nome"]
+
     try:
         # Atribui a variável 'tipo' o resultado da expressão 'ler_inteiro(request.form.get('tipo', '0'))'.
         tipo = ler_inteiro(request.form.get('tipo', '0'))
@@ -490,10 +496,10 @@ def cadastro():
         senha_hash = generate_password_hash(senha)
         # Inicia a execução da consulta ou comando SQL no banco de dados.
         cur.execute('''
-            INSERT INTO USUARIO(NOME, EMAIL, TIPO, SENHA_HASH, STATUS) -- Inicia a inclusão de um novo registro.
-            VALUES(?, ?, ?, ?, ?) -- Define os valores que serão gravados.
+            INSERT INTO USUARIO(NOME, EMAIL, TIPO, SENHA_HASH, STATUS, dispositivo) -- Inicia a inclusão de um novo registro.
+            VALUES(?, ?, ?, ?, ?, ?) -- Define os valores que serão gravados.
             RETURNING ID_USUARIO -- Solicita ao banco o identificador gerado.
-        ''', (nome.capitalize(), email, tipo, senha_hash, status))  # Fecha a string SQL usada pela consulta.
+        ''', (nome.capitalize(), email, tipo, senha_hash, status, dispositivo))  # Fecha a string SQL usada pela consulta.
         # Obtém um valor do primeiro registro e o armazena em 'id_novo_usuario'.
         id_novo_usuario = cur.fetchone()[0]
         # Percorre id_projeto in projetos.
