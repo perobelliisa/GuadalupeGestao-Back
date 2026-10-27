@@ -112,5 +112,5 @@ if __name__ == '__main__':
     recebimentos_lupe.iniciar()
     # Inicia o servidor Flask na interface e porta configuradas.
     from waitress import serve
-    serve(app, host='0.0.0.0', port=int(os.environ.get('PORT', '5000')), threads=1)
+    serve(app, host='0.0.0.0', port=int(os.environ.get('PORT', '5000')), threads=1, clear_untrusted_proxy_headers=False)
 
