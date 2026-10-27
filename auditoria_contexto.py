@@ -15,7 +15,7 @@ def aplicar_contexto(conexao):
         cur.close()
 
 
-def registrar_contexto(app, conexao, identificar):
+def registrar_contexto(app, conexao, identificar, dispositivo):
     @app.before_request
     def preparar_ator_auditoria():
         g.ator_auditoria = None
@@ -26,8 +26,11 @@ def registrar_contexto(app, conexao, identificar):
                 cur.execute('SELECT ID_USUARIO, NOME, EMAIL FROM USUARIO WHERE ID_USUARIO = ?', (identificador,))
                 usuario = cur.fetchone()
                 if usuario:
+                    cliente = dispositivo()
+                    origem = f"{cliente['nome'][:50]} | IP: {cliente['ip']}"
                     g.ator_auditoria = {'ID': usuario[0], 'NOME': usuario[1].strip(),
-                                         'EMAIL': (usuario[2] or '').strip(), 'DISPOSITIVO': 'Sistema Guadalupe'}
+                                         'EMAIL': (usuario[2] or '').strip(),
+                                         'DISPOSITIVO': origem}
             finally:
                 cur.close()
         aplicar_contexto(conexao)

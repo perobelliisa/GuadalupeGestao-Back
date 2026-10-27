@@ -96,7 +96,7 @@ class ContextoTest(unittest.TestCase):
         class Con:
             def cursor(self): return Cur()
         from flask import request
-        registrar_contexto(app, Con(), lambda: 2 if request.path == '/autenticado' else None)
+        registrar_contexto(app, Con(), lambda: 2 if request.path == '/autenticado' else None, lambda: {'nome': 'Chrome / Windows', 'ip': '192.0.2.10'})
         @app.get('/autenticado')
         @app.get('/anonimo')
         def estado(): return dict(contexto)

@@ -32,17 +32,40 @@ EXTENSOES_PERMITIDAS = {'.pdf', '.jpg', '.jpeg', '.png'}
 
 
 def pegar_dispositivo():
-    nome_maquina = socket.gethostname()
+    from flask import has_request_context, request, current_app
+    from ipaddress import ip_address, ip_network
+    if not has_request_context():
+        return {'nome': 'Processo interno', 'ip': 'Não informado'}
 
+    # Somente proxies da rede explicitamente configurada podem fornecer XFF.
+    # Percorre da direita para a esquerda: nunca aceita o primeiro IP cegamente.
+    redes = []
+    for rede in current_app.config.get('GLOG_TRUSTED_PROXY_CIDRS', '').split(','):
+        if rede.strip():
+            redes.append(ip_network(rede.strip()))
+    ip = 'Não informado'
     try:
-        ip_maquina = socket.gethostbyname(nome_maquina)
-    except socket.error:
-        ip_maquina = "IP não identificado"
+        endereco = ip_address(request.remote_addr)
+        encaminhados = request.headers.get('X-Forwarded-For', '').split(',')
+        while any(endereco in rede for rede in redes) and encaminhados:
+            endereco = ip_address(encaminhados.pop().strip())
+        # Endereços locais do servidor/container não identificam o cliente web.
+        if endereco.is_global:
+            ip = str(endereco)
+    except (ValueError, TypeError):
+        pass
+    ua = request.headers.get('User-Agent', '')[:1024]
+    sistema = next((nome for padrao, nome in [
+        ('Android', 'Android'), ('iPhone', 'iOS'), ('iPad', 'iPadOS'),
+        ('Windows', 'Windows'), ('Macintosh', 'macOS'), ('Linux', 'Linux')]
+        if padrao in ua), 'Sistema não informado')
+    navegador = next((nome for padrao, nome in [
+        ('Edg/', 'Edge'), ('OPR/', 'Opera'), ('Firefox/', 'Firefox'),
+        ('FxiOS/', 'Firefox'), ('CriOS/', 'Chrome'), ('Chrome/', 'Chrome'),
+        ('Safari/', 'Safari')]
+        if padrao in ua), 'Web')
+    return {'nome': f'{navegador} / {sistema}', 'ip': ip}
 
-    return {
-        "nome": nome_maquina,
-        "ip": ip_maquina
-    }
 
 
 # Define a função dados_requisicao, que obtém os dados enviados em JSON ou formulário.
@@ -1291,4 +1314,3 @@ def carregar_pendencias(cur):
         item['prioridade'] = prioridade(item['dias'])
         item['chave'] = f"{item['tipo']}:{item['id']}:{item['vencimento']}"
     return sorted(pendencias, key=lambda item: (item['vencimento'], item['chave'])), invalidos
-

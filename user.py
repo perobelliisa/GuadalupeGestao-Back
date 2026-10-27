@@ -417,7 +417,7 @@ def cadastro():
     # Inicia um bloco protegido para capturar erros durante a operação.
 
     
-     = pegar_dispositivo()["nome"]
+    dispositivo = pegar_dispositivo()["nome"]
 
     try:
         # Atribui a variável 'tipo' o resultado da expressão 'ler_inteiro(request.form.get('tipo', '0'))'.
