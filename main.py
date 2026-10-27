@@ -17,6 +17,7 @@ app= Flask(__name__)
 
 # Carrega as configurações da aplicação a partir do arquivo indicado.
 app.config.from_pyfile('config.py')
+app.config['GLOG_TRUSTED_PROXY_CIDRS'] = os.environ.get('GLOG_TRUSTED_PROXY_CIDRS', '')
 
 # Atribui a variável 'host' o resultado da expressão 'app.config['DB_HOST']'.
 host= app.config['DB_HOST']
@@ -103,8 +104,8 @@ registrar_documentacao(app)
 
 from auditoria import registrar_auditoria
 from auditoria_contexto import registrar_contexto
-from function import usuario_e_administrador
-registrar_contexto(app, con, id_usuario_logado)
+from function import usuario_e_administrador, pegar_dispositivo
+registrar_contexto(app, con, id_usuario_logado, pegar_dispositivo)
 registrar_auditoria(app, usuario_e_administrador)
 
 if __name__ == '__main__':
