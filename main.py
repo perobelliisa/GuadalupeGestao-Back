@@ -52,7 +52,42 @@ def servir_arquivo(nome_arquivo):
     # Retorna send_from_directory(app.config['UPLOAD_FOLDER'], nome_arquivo).
     return send_from_directory(app.config['UPLOAD_FOLDER'], nome_arquivo)
 
-con= fdb.connect(host= host, database=database, user=user, password=password, charset='UTF8')
+class ConexaoCompartilhada:
+    """Mantém a referência importada pelos módulos; reconecta só antes da rota."""
+
+    def __init__(self, conectar):
+        self._conectar = conectar
+        self._conexao = conectar()
+
+    def __getattr__(self, nome):
+        return getattr(self._conexao, nome)
+
+    def verificar(self):
+        try:
+            # Consulta o servidor sem abrir/confirmar a transação da aplicação.
+            self._conexao.db_info(fdb.isc_info_ods_version)
+        except fdb.DatabaseError:
+            anterior = self._conexao
+            # Só troca após abrir com sucesso. Nunca repete uma escrita.
+            self._conexao = self._conectar()
+            try:
+                anterior.close()
+            except fdb.DatabaseError:
+                pass
+            app.logger.warning('Conexão compartilhada Firebird restabelecida.')
+
+
+con = ConexaoCompartilhada(lambda: fdb.connect(
+    host=host, database=database, user=user, password=password, charset='UTF8'))
+
+
+@app.before_request
+def verificar_conexao_compartilhada():
+    # Registrado antes da auditoria: a conexão deve estar viva antes do contexto.
+    from flask import g
+    g.ator_auditoria = None
+    con.verificar()
+
 print('Banco conectado com sucesso!')
 
 # Importa * do módulo user para uso neste arquivo.
